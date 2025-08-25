@@ -1,0 +1,361 @@
+#+TITLE: Photo Manager Setup Guide for Linux (Manjaro)
+#+AUTHOR: Claude Code Analysis
+#+DATE: 2025-08-15
+
+* Overview
+
+This guide will walk you through setting up the Photo Management Toolkit on Linux (Manjaro). The original scripts were designed for macOS with MacPorts, but this guide adapts the process for Linux systems.
+
+* Dependencies Required
+
+** System Packages (via pacman)
+#+BEGIN_SRC bash
+# Essential tools
+sudo pacman -S python-pip python-pillow python-numpy sqlite
+sudo pacman -S perl-image-exiftool imagemagick rawtherapee ffmpeg
+
+# Face recognition dependencies  
+sudo pacman -S opencv python-scikit-learn
+#+END_SRC
+
+** Python Packages (via pip)
+#+BEGIN_SRC bash
+# AI face recognition (optional but recommended)
+pip install --user insightface onnxruntime
+
+# Web server dependencies
+pip install --user flask flask-cors
+#+END_SRC
+
+* Setup Process
+
+** Step 1: Prepare Directory Structure
+#+BEGIN_SRC bash
+cd "/home/vader/Documents/Ben Vallack Vault/Ben Vallack/Scripts/Photo Tool"
+
+# Create required directories
+mkdir -p "Master Photo Library"
+mkdir -p "Hard Link Galleries" 
+mkdir -p "RAW Proxies"
+mkdir -p "HEIC Proxies"
+mkdir -p "Video Proxies"
+mkdir -p "thumbnails"
+mkdir -p "JSON"
+mkdir -p "RawTherapee Presets"
+
+# Make scripts executable
+chmod +x Scripts/*.py
+chmod +x photo_manager.py
+#+END_SRC
+
+** Step 2: Initialize Database
+#+BEGIN_SRC bash
+cd "/home/vader/Documents/Ben Vallack Vault/Ben Vallack/Scripts/Photo Tool"
+python3 Scripts/create_db.py
+#+END_SRC
+
+This creates ~Scripts/image_metadata.db~ with the following schema:
+- *images* - Photo metadata, EXIF data, file paths
+- *faces* - Detected face coordinates and embeddings  
+- *persons* - People groups with names and confirmation
+- *tags* - User-defined photo tags
+- *collections* - Gallery definitions and metadata
+
+** Step 3: Add Your Photos
+#+BEGIN_SRC bash
+# Option A: Copy/move your photos to Master Photo Library
+cp -r /path/to/your/photos/* "Master Photo Library/"
+
+# Option B: Create symlinks if photos are stored elsewhere
+ln -s /path/to/your/photos/* "Master Photo Library/"
+#+END_SRC
+
+*Supported formats:*
+- *Photos*: JPG, HEIC, PNG, TIFF
+- *RAW*: CR2, CR3, NEF, ARW, DNG, RAF, ORF, RW2
+- *Video*: MOV, MP4, AVI, MKV
+
+** Step 4: Extract Metadata
+#+BEGIN_SRC bash
+python3 photo_manager.py
+# Choose option 1: Extract Metadata
+# Enter "Master Photo Library" when prompted
+#+END_SRC
+
+This process:
+- Scans all supported files in the directory
+- Extracts EXIF data using ExifTool
+- Stores metadata in SQLite database
+- Detects RAW files and adjacent JPEGs
+- May take several minutes for large libraries
+
+** Step 5: Generate Thumbnails & Proxies
+#+BEGIN_SRC bash
+# Still in photo_manager.py:
+# Choose option 5: Generate Thumbnails
+# Choose option 6: Generate HEIC Proxies (if you have HEIC files)
+# Choose option 7: Generate RAW Proxies (if you have RAW files)
+#+END_SRC
+
+*What each generates:*
+- *Thumbnails*: Fast-loading WebP previews for gallery grid
+- *HEIC Proxies*: Browser-compatible versions of HEIC files
+- *RAW Proxies*: Processed JPEG versions of RAW files using RawTherapee
+
+** Step 6: Create Your First Gallery
+#+BEGIN_SRC bash
+# In photo_manager.py:
+# Choose option 3: Create Virtual Gallery
+#+END_SRC
+
+*Search examples:*
+- ~"2024"~ - All photos from 2024
+- ~"Canon"~ - Photos taken with Canon cameras
+- ~"vacation photos"~ - Photos containing those words in metadata
+- ~"Ben 27mm 2023"~ - Photos of Ben, taken with 27mm lens in 2023
+- ~"f2.8 iso800"~ - Technical parameters
+
+** Step 7: Start Web Interface
+#+BEGIN_SRC bash
+# In photo_manager.py:
+# Choose option 11: Start Gallery Server
+# Then open: http://localhost:8000/index-display.html
+#+END_SRC
+
+This starts both:
+- Face API Server (port 8001) - Provides face detection data
+- Gallery Web Server (port 8000) - Serves the photo viewer
+
+* Quick Start Commands
+
+For experienced users who want to skip the interactive menu:
+
+#+BEGIN_SRC bash
+# Navigate to Photo Tool directory
+cd "/home/vader/Documents/Ben Vallack Vault/Ben Vallack/Scripts/Photo Tool"
+
+# One-time setup
+python3 Scripts/create_db.py
+python3 Scripts/extract_metadata.py "Master Photo Library"
+
+# Generate web-ready files
+python3 Scripts/generate_thumbnails.py
+python3 Scripts/generate_heic_proxies.py
+
+# Start servers
+python3 Scripts/face_api_server.py &  # Background
+python3 -m http.server 8000 &        # Background
+
+# Open browser to: http://localhost:8000/index-display.html
+#+END_SRC
+
+* Optional: Face Recognition Setup
+
+** Install Additional Dependencies
+#+BEGIN_SRC bash
+# For advanced face recognition
+pip install --user insightface onnxruntime scikit-learn
+#+END_SRC
+
+** Face Recognition Workflow
+#+BEGIN_SRC bash
+# Extract faces from all photos (may take hours for large libraries)
+python3 Scripts/face_recognizer_insightface.py --extract
+
+# Cluster faces into people groups
+python3 Scripts/face_recognizer_insightface.py --cluster
+
+# Label important people (replace ID and name)
+python3 Scripts/face_recognizer_insightface.py --label 1 "John Smith"
+
+# View statistics
+python3 Scripts/face_recognizer_insightface.py --stats
+#+END_SRC
+
+* File Organization
+
+Your directory structure should look like:
+#+BEGIN_EXAMPLE
+Photo Tool/
+├── Master Photo Library/     # Your original photos go here
+├── Hard Link Galleries/      # Virtual galleries (created by searches)
+├── RAW Proxies/             # Processed RAW files  
+├── HEIC Proxies/            # Web-compatible HEIC files
+├── Video Proxies/           # Compressed video files
+├── thumbnails/              # Fast-loading thumbnails
+├── JSON/                    # Gallery metadata
+├── Scripts/                 # Processing tools (18 Python scripts)
+├── RawTherapee Presets/     # RAW processing presets
+├── photo_manager.py         # Main CLI interface
+└── index-display.html       # Web gallery viewer
+#+END_EXAMPLE
+
+* Key Features to Try
+
+** Smart Gallery Creation
+The gallery creation system uses intelligent search to create virtual collections:
+
+- ~"2024 Canon"~ - Photos from 2024 taken with Canon cameras
+- ~"vacation beach"~ - Photos with those keywords in metadata  
+- ~"f2.8 85mm"~ - Photos with specific technical parameters
+- ~"John Mary"~ - Photos containing both people (after face recognition)
+- ~"2023-06"~ - Photos from June 2023
+- ~"fuji 35mm f1.4"~ - Specific camera/lens/aperture combination
+
+** Web Interface Keyboard Shortcuts
+- ~/~ - Open command palette (Spotlight-style)
+- ~Arrow keys~ - Navigate between photos  
+- ~Space~ - Toggle zoom modes
+- ~M~ - Toggle metadata sidebar
+- ~O~ - Toggle face detection overlay
+- ~P~ - Mark photo as pick
+- ~X~ - Mark photo as reject
+- ~G~ - Gallery selector
+- ~L~ - Toggle picks list
+- ~Q~ - Exit/clear selection
+
+** Command Palette Features
+Press ~/~ in the web interface to access:
+- *Create Gallery* - Smart search-based gallery creation
+- *Process New Images* - Complete automated workflow
+- *Regenerate RAW Picks* - Process selected RAW files
+- *Delete Rejected Images* - Safe bulk deletion with preview
+- *Stats Dashboard* - Comprehensive database analytics
+
+** Advanced RAW Workflow
+- RAW files are automatically detected during metadata extraction
+- Adjacent JPEG companions are identified and linked
+- Custom RAW processing available with RawTherapee presets
+- Gallery creation intelligently chooses between original JPEG and processed RAW proxy
+- Picked RAW files can be regenerated with custom settings
+
+* Platform Differences from macOS Version
+
+| Component | macOS (MacPorts) | Linux (Manjaro) |
+|-----------+------------------+-----------------|
+| ExifTool | ~/opt/local/libexec/perl5.34/exiftool~ | ~/usr/bin/exiftool~ |
+| ImageMagick | ~/opt/local/bin/magick~ | ~/usr/bin/magick~ |
+| RawTherapee | ~/opt/local/bin/rawtherapee-cli~ | ~/usr/bin/rawtherapee-cli~ |
+| FFmpeg | ~/opt/local/bin/ffmpeg~ | ~/usr/bin/ffmpeg~ |
+| Dependencies | ~port install~ | ~pacman -S~ |
+| Python packages | MacPorts + pip | pip only |
+
+*Note:* The core functionality remains identical across platforms. The scripts auto-detect tool locations in most cases.
+
+* Troubleshooting
+
+** Common Issues
+
+*** Database creation fails
+#+BEGIN_SRC bash
+# Check if you're in the right directory
+pwd
+# Should be: /home/vader/Documents/Ben Vallack Vault/Ben Vallack/Scripts/Photo Tool
+
+# Try explicit database creation
+python3 Scripts/create_db.py Scripts/image_metadata.db
+#+END_SRC
+
+*** Metadata extraction fails
+#+BEGIN_SRC bash
+# Check ExifTool installation
+which exiftool
+exiftool -ver
+
+# Test on a single file
+exiftool "Master Photo Library/IMG_0001.jpg"
+#+END_SRC
+
+*** Web interface not loading
+#+BEGIN_SRC bash
+# Check if servers are running
+lsof -i :8000
+lsof -i :8001
+
+# Restart servers
+pkill -f "face_api_server.py"
+pkill -f "http.server"
+
+# Start again via photo_manager.py option 11
+#+END_SRC
+
+*** RAW processing fails
+#+BEGIN_SRC bash
+# Check RawTherapee installation
+which rawtherapee-cli
+rawtherapee-cli --help
+
+# Verify RAW file support
+file "Master Photo Library/IMG_0001.CR2"
+#+END_SRC
+
+** Performance Tips
+
+*** For Large Libraries (>10,000 photos)
+- Run metadata extraction overnight
+- Use ~--limit~ flags during testing
+- Consider SSD storage for database
+- Monitor RAM usage during face processing
+
+*** Memory Management
+#+BEGIN_SRC bash
+# Monitor resource usage
+htop
+
+# Limit concurrent processing
+python3 Scripts/generate_thumbnails.py --max-workers 2
+#+END_SRC
+
+* Advanced Usage
+
+** Automated Processing Pipeline
+For new photos added to your library:
+
+#+BEGIN_SRC bash
+# Complete automated workflow
+python3 photo_manager.py
+# Choose option 10: Process New Images
+#+END_SRC
+
+This runs:
+1. Metadata extraction
+2. Thumbnail generation  
+3. HEIC proxy creation
+4. RAW proxy generation
+5. Face detection
+6. Face clustering
+
+** API Integration
+The Face API server provides REST endpoints:
+
+#+BEGIN_SRC bash
+# Get face data for image
+curl http://localhost:8001/api/faces/123
+
+# Create new gallery
+curl -X POST http://localhost:8001/api/create-gallery \
+  -H "Content-Type: application/json" \
+  -d '{"search_string": "2024 Canon", "gallery_name": "Canon 2024"}'
+
+# System statistics
+curl http://localhost:8001/api/stats
+#+END_SRC
+
+** Custom RAW Processing
+#+BEGIN_SRC bash
+# Regenerate picked RAW files with custom settings
+python3 Scripts/regenerate_raw_picks.py --quality 98 --preset "Fuji Provia"
+
+# Available presets are in RawTherapee Presets/ directory
+ls "RawTherapee Presets/"
+#+END_SRC
+
+* Next Steps
+
+1. *Start Small*: Begin with a subset of photos to test the workflow
+2. *Explore Search*: Try different gallery search combinations
+3. *Face Recognition*: Label important people for better organization
+4. *Custom Workflows*: Adapt scripts for your specific needs
+5. *Backup Strategy*: The system uses hard links - original files are never modified
+
+The Photo Management Toolkit provides a professional-grade photo organization system with modern AI features. Take time to explore the web interface and experiment with different gallery searches to get the most out of the system.

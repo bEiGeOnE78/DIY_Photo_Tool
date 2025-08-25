@@ -1,0 +1,325 @@
+#+TITLE: Photo Management Toolkit - Public Functions & API Reference
+#+AUTHOR: System Analysis
+#+DATE: 2025-08-16
+#+DESCRIPTION: Comprehensive documentation of all public functions and APIs available in the Photo Management Toolkit
+
+* Overview
+
+This document provides a complete reference of all public functions available for interaction with the Photo Management Toolkit. The system offers both command-line interfaces and REST APIs for comprehensive photo management, face recognition, and intelligent gallery creation.
+
+* 1. Main CLI Interface (=photo_manager.py=)
+
+** Primary Entry Point
+The =PhotoManager= class provides an interactive menu system serving as the main entry point.
+
+** Core Functions
+- =extract_metadata()= - Extract EXIF metadata from photos to database
+- =setup_database()= - Create/initialize SQLite database  
+- =create_gallery()= - Create virtual galleries with smart search
+- =rebuild_gallery_json()= - Refresh gallery metadata files
+- =generate_thumbnails()= - Create fast-loading thumbnails
+- =generate_heic_proxies()= - Convert HEIC to WebP for browsers
+- =generate_raw_proxies()= - Process RAW files to JPG
+- =generate_video_proxies()= - Create h.264 video proxies
+- =regenerate_raw_picks()= - Custom RAW processing for selected images
+- =process_new_images()= - Complete automated workflow
+- =start_gallery_server()= - Launch web interface servers
+- =stop_gallery_server()= - Stop running servers
+- =restart_gallery_server()= - Restart with gallery list rebuild
+- =face_recognition_menu()= - Face detection and labeling interface
+
+* 2. REST API Server (=Scripts/face_api_server.py=)
+
+** Base URL
+=http://localhost:8001/api/=
+
+** GET Endpoints
+- =GET /api/faces/{image_id}= - Face detection data for specific image
+- =GET /api/stats= - Comprehensive database statistics
+- =GET /api/people= - All identified people with face counts
+- =GET /api/image-metadata/{image_id}= - Complete image metadata
+- =GET /api/presets= - Available RAW processing presets
+- =GET /api/progress-log?offset=N= - Real-time progress updates
+- =GET /api/luts= - Available color correction LUTs
+- =GET /api/video-proxy-status/{image_id}= - Video proxy existence check
+
+** POST Endpoints
+- =POST /api/save-picks= - Save image selections to JSON
+- =POST /api/save-rejects= - Save rejection list
+- =POST /api/assign-face= - Assign face to person
+- =POST /api/ignore-face= - Mark face as ignored
+- =POST /api/rename-person= - Rename/merge people
+- =POST /api/create-gallery= - Create new gallery via search
+- =POST /api/process-new-images= - Trigger automated processing
+- =POST /api/delete-rejects= - Execute safe file deletion
+- =POST /api/rebuild-galleries-list= - Refresh gallery index
+- =POST /api/generate-raw-proxy= - Create custom RAW proxy
+- =POST /api/generate-video-proxy= - Create video proxy with LUTs
+
+* 3. Gallery Creation (=Scripts/gallery_create_search.py=)
+
+** SearchGalleryCreator Class
+- =search_images(search_string)= - Natural language photo search
+- =parse_search_string(search_string)= - Parse search queries
+- =get_images_from_picks(picks_file)= - Create gallery from picks
+- =create_face_sample_gallery()= - One image per person gallery
+- =create_gallery(images, gallery_name, description)= - Generate hard-link gallery
+
+** Search Examples
+- *People*: ="John"=, ="wedding guests"=
+- *Dates*: ="2024"=, ="2023-12"=, ="2023-2024"=
+- *Camera/Lens*: ="fuji 35mm"=, ="canon f2.8"=
+- *Combined*: ="Ben 27mm 2023"=, ="vacation 2024"=
+
+* 4. Face Recognition (=Scripts/face_recognizer_insightface.py=)
+
+** InsightFaceRecognizer Class
+- =extract_face_embeddings(limit=None)= - Detect faces in images
+- =cluster_faces(eps=0.6, min_samples=3)= - Group similar faces
+- =cluster_new_faces(similarity_threshold=0.6)= - Add to existing clusters
+- =cluster_new_faces_loop()= - Iterative clustering until convergence
+- =get_people_stats()= - Face recognition statistics
+- =label_person(person_id, name)= - Name person clusters
+- =delete_unconfirmed_people()= - Remove auto-detected people
+
+** Workflow
+#+BEGIN_SRC bash
+# 1. Extract faces from all photos
+python Scripts/face_recognizer_insightface.py --extract
+
+# 2. Cluster faces into people groups
+python Scripts/face_recognizer_insightface.py --cluster
+
+# 3. Label important people
+python Scripts/face_recognizer_insightface.py --label 5 "John Smith"
+
+# 4. View statistics
+python Scripts/face_recognizer_insightface.py --stats
+#+END_SRC
+
+* 5. Metadata Extraction (=Scripts/extract_metadata.py=)
+
+** MetadataExtractor Class
+- =extract_metadata(file_path)= - Extract EXIF data from files
+- =crawl_directory(directory, options)= - Process photo directories
+- =extract_video_metadata(file_path)= - Video-specific metadata
+- =detect_raw_proxy_status(file_path)= - RAW file relationships
+- =cleanup_deleted_files(base_directory)= - Remove stale entries
+
+** Supported File Types
+- *Photos*: JPG, HEIC, PNG, TIFF
+- *RAW*: RAF (Fuji), ARW (Sony), CR2/CR3 (Canon), NEF (Nikon), RW2 (Panasonic)
+- *Video*: MOV, MP4, AVI, MKV
+
+* 6. Thumbnail Generation (=Scripts/generate_thumbnails.py=)
+
+** ThumbnailGenerator Class
+- =generate_thumbnail(image_id)= - Create 284px thumbnail
+- =batch_generate(limit, force, heic_only, video_only)= - Bulk processing
+- =needs_thumbnail(image_id)= - Check if update needed
+- =clean_orphaned()= - Remove orphaned thumbnails
+- =get_stats()= - Thumbnail cache statistics
+
+** Features
+- Optimized WebP format for fast loading
+- Automatic orientation correction
+- Database ID-based naming for reliability
+- Batch processing with progress tracking
+
+* 7. RAW Processing (=Scripts/generate_raw_proxies.py=)
+
+** Standalone Functions
+- =get_raw_files_from_db(image_id)= - Find RAW files needing proxies
+- =convert_raw_to_adjacent_jpg()= - RawTherapee processing
+- =generate_custom_raw_proxy()= - Custom settings proxy
+- =get_camera_standard_from_exif()= - Auto-detect camera presets
+- =get_available_presets()= - List processing presets
+
+** Camera Support
+- Fuji X-series (XE4, XT3, XT4, etc.)
+- Sony A-series (A7C, A6500, etc.)
+- Panasonic Lumix (LX100, etc.)
+- Canon, Nikon, and other major brands
+
+** Processing Features
+- Camera-specific presets applied automatically
+- Film simulation modes for supported cameras
+- Custom quality settings and exposure adjustments
+- Adjacent JPEG detection and handling
+
+* 8. Video Processing (=Scripts/generate_video_proxies.py=)
+
+** VideoProxyGenerator Class
+- =generate_proxy(video_id, path, luts, force)= - Create h.264 proxy
+- =batch_generate(limit, force)= - Process all videos
+- =process_picks_file(picks_file, luts, force)= - Process selections
+- =get_video_info(video_path)= - Extract video metadata
+- =clean_orphaned()= - Remove orphaned proxies
+
+** Video Features
+- h.264 compression optimized for web viewing
+- Maintains aspect ratio for all formats
+- Optional color correction LUT application
+- Typical file size reduction: 70-90%
+- iPad Pro 12.9" retina display optimization (2732px max)
+
+* 9. Database Management
+
+** Database Creation (=Scripts/create_db.py=)
+- =create_database(db_path)= - Initialize SQLite schema
+- Handles schema migrations for existing databases
+- Sets up indexes for performance optimization
+
+** Database Cleanup (=Scripts/cleanup_database.py=)
+- =cleanup_stale_entries()= - Remove deleted file entries
+- =analyze_raw_files()= - RAW file status analysis
+- Interactive maintenance interface
+
+** Database Schema
+- *images* - Photo metadata, EXIF data, file paths
+- *faces* - Detected face coordinates and embeddings
+- *persons* - People groups with names and confirmation
+- *tags* - User-defined photo tags
+- *collections* - Gallery definitions and metadata
+
+* 10. Utility Functions
+
+** Gallery Management
+- =rebuild_galleries_json()= - Regenerate main gallery index
+- =delete_all_culled_by_id.py= - Safe file deletion by database ID
+
+** File Conversion
+- =convert_heic_to_webp()= - HEIC to WebP conversion
+- =clean_orphaned_proxies()= - Remove orphaned proxy files
+
+* Usage Patterns
+
+** 1. CLI Access
+#+BEGIN_SRC bash
+# Launch interactive menu
+python photo_manager.py
+#+END_SRC
+
+** 2. API Access  
+#+BEGIN_SRC bash
+# Start servers (option 11 in photo_manager.py)
+# Then use HTTP endpoints at http://localhost:8001/api/
+#+END_SRC
+
+** 3. Search Galleries
+#+BEGIN_SRC bash
+# Use natural language queries
+"John 2024 fuji"           # Photos of John from 2024 with Fuji camera
+"wedding guests"           # Wedding photos with multiple people
+"f2.8 iso800"             # Technical parameters
+"vacation 2023-2024"       # Date range searches
+#+END_SRC
+
+** 4. Face Recognition Workflow
+#+BEGIN_SRC bash
+# Complete face recognition pipeline
+python Scripts/face_recognizer_insightface.py --extract
+python Scripts/face_recognizer_insightface.py --cluster
+python Scripts/face_recognizer_insightface.py --label 1 "John Smith"
+#+END_SRC
+
+** 5. RAW Workflow
+- Auto-detection of adjacent JPGs vs custom proxies
+- Database ID tracking for reliable deletion
+- Gallery folders contain display-ready files
+
+** 6. Safety Features
+- All functions use hard links, never modify originals
+- Trash-based deletion with preview
+- Database ID tracking for reliable file operations
+- Incremental processing (only new/changed files)
+
+* API Integration Examples
+
+** JavaScript Fetch API
+#+BEGIN_SRC javascript
+// Create gallery via API
+fetch('/api/create-gallery', {
+  method: 'POST',
+  headers: {'Content-Type': 'application/json'},
+  body: JSON.stringify({
+    search_string: 'John 2024 fuji',
+    gallery_name: 'John 2024 Fuji Photos'
+  })
+});
+
+// Get face data for image
+fetch(`/api/faces/${imageId}`)
+  .then(r => r.json())
+  .then(faces => {
+    // Display face overlays
+  });
+#+END_SRC
+
+** Python Requests
+#+BEGIN_SRC python
+import requests
+
+# Get system statistics
+response = requests.get('http://localhost:8001/api/stats')
+stats = response.json()
+
+# Save picks to file
+picks_data = {'picks': [123, 456, 789]}
+response = requests.post(
+    'http://localhost:8001/api/save-picks',
+    json=picks_data
+)
+#+END_SRC
+
+* Command Palette Integration
+
+The web interface includes a Spotlight-style command palette accessible via =/= key:
+
+- *Create Gallery* - Smart search-based gallery creation
+- *Process New Images* - Complete automated workflow
+- *Regenerate RAW Picks* - Process selected RAW files
+- *Delete Rejected Images* - Safe bulk deletion with preview
+- *Stats Dashboard* - Comprehensive database analytics
+- *Rebuild Gallery JSON* - Refresh current gallery data
+- *Rebuild Galleries List* - Update main gallery index
+
+* Architecture Notes
+
+** Key Design Patterns
+1. *Database-Centric* - SQLite database as central metadata store
+2. *Path Auto-Detection* - Scripts work from main directory or Scripts subdirectory
+3. *Proxy Management* - Sophisticated handling of RAW, HEIC, and video proxies
+4. *Hard Link Galleries* - Virtual galleries using hard links to avoid duplication
+5. *Face Recognition Pipeline* - Complete workflow from detection to labeling
+6. *Web API Integration* - REST API for browser-based interface
+
+** Performance Features
+- Indexed searches on dates, cameras, people
+- Incremental updates (only process changed files)
+- Batch operations for efficient bulk processing
+- Hard link resolution with automatic duplicate detection
+- Lazy loading thumbnails and proxies
+
+** Security Considerations
+- Read-only access to original files
+- Safe deletion using trash/preview system
+- Database ID tracking prevents accidental file loss
+- No network exposure by default (localhost only)
+
+* Troubleshooting
+
+** Common Issues
+- *Gallery creation fails*: Check database exists, verify metadata extracted
+- *Face detection not working*: Install dependencies, extract faces, start API server
+- *RAW processing fails*: Install RawTherapee, check presets, verify file permissions
+- *Web interface not loading*: Check server running, try different port, clear cache
+
+** Performance Optimization
+- Use =--batch-size 1000= for large libraries
+- Run face detection overnight for >50k photos
+- Enable database query optimization
+- Consider SSD storage for database
+- Monitor RAM usage during face processing
+
+This comprehensive API reference enables full programmatic control over the Photo Management Toolkit's capabilities, supporting both interactive use and automated workflows.

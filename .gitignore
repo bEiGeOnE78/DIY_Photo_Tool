@@ -1,0 +1,63 @@
+# Python virtual environment
+photo-env/
+
+# Database files
+Scripts/image_metadata.db*
+Scripts/*.db
+*.sqlite
+*.sqlite3
+
+# Photo directories (actual photos should not be in repo)
+Master Photo Library/
+Hard Link Galleries/
+thumbnails/
+RAW Proxies/
+HEIC Proxies/
+Video Proxies/
+
+# Generated JSON data files
+JSON/
+*.json
+!README.md
+
+# Log files
+*.log
+progress.log
+
+# macOS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Editor temporary files
+*~
+#*#
+.#*
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# LUT and preset directories (may contain large files)
+LUTS/
+RawTherapee Presets/
+
+# Backup files
+*.bak
+*.backup
+
+# Any temp or test files
+temp/
+test/
+tmp/
