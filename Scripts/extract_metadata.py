@@ -333,7 +333,7 @@ class MetadataExtractor:
                         metadata['date_original'] = parsed_date
             
         except Exception as e:
-            print(f"✗ Error processing video {file_path}: {e}")
+            print(f"❌ Error processing video {file_path}: {e}")
             
         return metadata
     
@@ -489,7 +489,7 @@ class MetadataExtractor:
                 print(f"⚠ Could not read image data from {os.path.basename(processing_file)}: {type(e).__name__}")
                         
         except Exception as e:
-            print(f"✗ Error processing {file_path}: {e}")
+            print(f"❌ Error processing {file_path}: {e}")
             
         return metadata
     
@@ -516,7 +516,7 @@ class MetadataExtractor:
             sql = f"INSERT INTO images ({columns}) VALUES ({placeholders})"
             cursor.execute(sql, list(metadata.values()))
             image_id = cursor.lastrowid
-            print(f"✓ Added: {metadata['filename']}")
+            print(f"✅ Added: {metadata['filename']}")
         else:
             # Update existing record if file was modified OR force_update is True
             if force_update or metadata['last_modified'] > existing_modified:
@@ -640,7 +640,7 @@ class MetadataExtractor:
                 print("\nCrawl interrupted by user")
                 break
             except Exception as e:
-                print(f"✗ Error processing {file_path}: {e}")
+                print(f"❌ Error processing {file_path}: {e}")
                 errors += 1
         
         print(f"\nCrawl complete:")

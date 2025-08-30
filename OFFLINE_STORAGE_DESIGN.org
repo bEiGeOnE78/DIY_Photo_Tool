@@ -1,0 +1,243 @@
+#+TITLE: Offline Storage Extension Design
+#+AUTHOR: Photo Tool Analysis
+#+DATE: 2025-08-30
+
+* Overview
+
+This document outlines the architectural design for extending the Photo Tool to support offline storage devices (external hard drives, USB drives) while maintaining full browsability of content when devices are disconnected.
+
+* Current System Analysis
+
+** Database Schema
+- SQLite database with =images= table storing absolute file paths
+- Direct filesystem access assumed for all operations
+- Metadata extracted via exiftool/ffmpeg and stored persistently
+- Face detection results stored with image references
+
+** File Access Pattern
+- All operations expect direct file system access
+- Proxies and thumbnails generated on-demand
+- No caching mechanism for offline access
+
+** Identified Limitations
+- Cannot browse photos when external drives are disconnected
+- No drive identification or tracking system
+- Absolute paths break when drives mount at different locations
+- No offline preview capability
+
+* Proposed Architecture
+
+** 1. Extended Database Schema
+
+*** New Tables
+#+BEGIN_SRC sql
+-- Storage devices table
+CREATE TABLE storage_devices (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    uuid TEXT UNIQUE NOT NULL,           -- Drive UUID for identification
+    label TEXT,                          -- User-friendly drive name
+    device_path TEXT,                    -- /dev/sdX identifier
+    mount_point TEXT,                    -- Current mount location
+    is_online INTEGER DEFAULT 0,         -- 0=offline, 1=online
+    last_seen DATETIME,                  -- Last mount timestamp
+    total_size INTEGER,                  -- Drive capacity in bytes
+    drive_type TEXT DEFAULT 'external',  -- 'external', 'internal', 'network'
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Local cache for offline browsing
+CREATE TABLE offline_cache (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    image_id INTEGER NOT NULL,
+    cache_type TEXT NOT NULL,            -- 'thumbnail', 'proxy', 'metadata'  
+    local_path TEXT NOT NULL,            -- Path in local cache directory
+    file_size INTEGER,
+    cache_quality TEXT,                  -- 'high', 'medium', 'low'
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
+);
+#+END_SRC
+
+*** Modified Tables
+#+BEGIN_SRC sql
+-- Add columns to existing images table
+ALTER TABLE images ADD COLUMN storage_device_id INTEGER REFERENCES storage_devices(id);
+ALTER TABLE images ADD COLUMN relative_path TEXT;  -- Path relative to device root
+ALTER TABLE images ADD COLUMN is_accessible INTEGER DEFAULT 1;  -- File currently accessible
+#+END_SRC
+
+** 2. Drive Detection & Management System
+
+*** Core Components
+- =OfflineStorageManager=: Main coordination class
+- =DriveMonitor=: Automated drive detection via udev events
+- =PathResolver=: Handle online/offline path resolution
+- =OfflineCacheManager=: Manage cached thumbnails and proxies
+
+*** Drive Identification Strategy
+1. Use persistent UUID for drive identification (survives remounting)
+2. Create =.photo_tool_manifest= file on registered drives
+3. Cross-reference with database for known photo drives
+4. Support manual registration and automatic detection
+
+** 3. Caching Strategy
+
+*** Multi-Tier Caching System
+- *Tier 1* (Always cached): Small thumbnails (200px) for all photos
+- *Tier 2* (Selective): Medium proxies (1200px) for recent/favorites  
+- *Tier 3* (On-demand): High-quality proxies for specific albums
+
+*** Cache Directory Structure
+#+BEGIN_EXAMPLE
+~/.photo_tool_cache/
+├── thumbnails/
+│   ├── drive_uuid_1/
+│   │   ├── image_123_thumb.webp
+│   │   └── image_124_thumb.webp
+│   └── drive_uuid_2/
+├── proxies/
+│   ├── medium/
+│   └── high/
+└── metadata/
+    └── drive_manifests/
+#+END_EXAMPLE
+
+*** Smart Caching Logic
+- Generate thumbnails when drive is first connected
+- Prioritize recent photos and user favorites for proxy caching
+- Implement LRU eviction when cache size limits reached
+- Background processing to avoid blocking user interactions
+
+** 4. User Interface Modifications
+
+*** Visual Indicators
+- Overlay icons for offline photos (cloud with slash)
+- Drive status panel showing connected/disconnected drives
+- Photo counts per drive in status display
+- "Connect drive to view" tooltips on offline content
+
+*** New UI Components
+- Storage management panel in settings
+- Cache usage statistics and cleanup controls
+- "Show only available photos" filter toggle
+- Drive registration wizard for new devices
+
+*** Search and Filter Enhancements
+- Filter by drive availability status
+- Search within specific drives
+- "Recently connected" drive quick access
+
+** 5. API Extensions
+
+*** New Endpoints
+#+BEGIN_SRC
+GET /api/storage-devices          # List all registered drives
+GET /api/storage-devices/online   # List currently mounted drives  
+POST /api/storage-devices         # Register new drive
+PUT /api/storage-devices/{id}     # Update drive information
+DELETE /api/storage-devices/{id}  # Unregister drive
+
+GET /api/images?accessible=true   # Filter by accessibility
+GET /api/images?drive_id={id}     # Filter by storage device
+
+GET /api/cache/stats             # Cache usage statistics
+POST /api/cache/generate         # Force cache generation
+DELETE /api/cache/cleanup        # Clean cache by criteria
+#+END_SRC
+
+*** Modified Endpoints
+- All image-serving endpoints must check accessibility
+- Fallback to cached versions for offline content
+- Enhanced metadata to include drive status
+
+* Implementation Phases
+
+** Phase 1: Core Infrastructure (Week 1-2)
+1. Database schema migration scripts
+2. Basic drive detection and UUID tracking
+3. Simple thumbnail caching system
+4. Path resolution with online/offline handling
+
+** Phase 2: User Experience (Week 3-4)  
+1. UI indicators for offline content
+2. Drive management interface
+3. Basic cache management controls
+4. Search and filter enhancements
+
+** Phase 3: Advanced Features (Week 5-6)
+1. Automated drive monitoring via udev
+2. Smart caching based on usage patterns
+3. Network drive support (SMB/NFS)
+4. Performance optimizations
+
+** Phase 4: Polish & Testing (Week 7-8)
+1. Comprehensive testing with multiple drives
+2. Migration tools for existing photo collections
+3. Documentation and user guides
+4. Performance tuning and bug fixes
+
+* Migration Strategy
+
+** For Existing Photos
+1. Analyze existing photo paths to identify common drive root directories
+2. Prompt user to register external drives during migration
+3. Convert absolute paths to device-relative paths
+4. Generate initial thumbnail cache for registered drives
+5. Update database schema with new columns
+
+** Backward Compatibility
+- Maintain support for photos stored on internal drives
+- Preserve existing functionality for users who don't use external storage
+- Graceful degradation when drive detection fails
+
+* Technical Considerations
+
+** Drive Detection Methods
+- Primary: UUID-based identification via =blkid=
+- Secondary: Device path tracking (=/dev/sdX=)
+- Fallback: Mount point pattern matching
+- Manual: User-specified drive registration
+
+** Performance Optimizations
+- Asynchronous thumbnail generation
+- Batch database operations during drive scanning
+- Lazy loading of cached images
+- Background cache cleanup processes
+
+** Error Handling
+- Graceful handling of drive mount/unmount during operations
+- Retry mechanisms for temporary I/O errors  
+- User notification for drive connection issues
+- Recovery procedures for corrupted cache
+
+** Security Considerations
+- Validate drive UUIDs to prevent spoofing
+- Secure cache directory permissions
+- Safe handling of drive metadata
+- Protection against cache poisoning attacks
+
+* Future Enhancements
+
+** Advanced Drive Support
+- RAID array handling
+- Network-attached storage (NAS)
+- Cloud storage integration
+- Encrypted drive support
+
+** Smart Caching Features
+- Machine learning for cache prediction
+- Usage pattern analysis
+- Automatic cache optimization
+- Collaborative filtering for shared drives
+
+** Cross-Platform Compatibility
+- Windows drive letter support
+- macOS volume mounting
+- Network drive abstraction
+- Universal drive identification
+
+* Conclusion
+
+This offline storage extension maintains the Photo Tool's current functionality while adding robust support for external drives and offline browsing. The multi-tier caching strategy ensures users can browse their photo collections even when drives are disconnected, with automatic synchronization when drives are reconnected.
+
+The phased implementation approach allows for iterative development and testing, with each phase building upon the previous one. The design prioritizes user experience while maintaining system performance and reliability.

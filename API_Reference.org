@@ -49,12 +49,16 @@ The =PhotoManager= class provides an interactive menu system serving as the main
 - =POST /api/assign-face= - Assign face to person
 - =POST /api/ignore-face= - Mark face as ignored
 - =POST /api/rename-person= - Rename/merge people
-- =POST /api/create-gallery= - Create new gallery via search
-- =POST /api/process-new-images= - Trigger automated processing
+- =POST /api/switch-proxy= - Switch RAW image display mode
+- =POST /api/generate-raw-proxy= - Generate custom-processed RAW proxy
+- =POST /api/generate-video-proxy= - Generate video proxy with specified quality
+- =POST /api/switch-video-proxy= - Switch video proxy quality/codec
+- =POST /api/delete-rejects-preview= - Preview rejected images for deletion
 - =POST /api/delete-rejects= - Execute safe file deletion
+- =POST /api/create-gallery= - Create new gallery via search
+- =POST /api/rebuild-gallery-json= - Regenerate gallery JSON from database
 - =POST /api/rebuild-galleries-list= - Refresh gallery index
-- =POST /api/generate-raw-proxy= - Create custom RAW proxy
-- =POST /api/generate-video-proxy= - Create video proxy with LUTs
+- =POST /api/process-new-images= - Trigger automated processing
 
 * 3. Gallery Creation (=Scripts/gallery_create_search.py=)
 
