@@ -360,9 +360,20 @@ class MetadataExtractor:
             # Try to open image and extract EXIF with PIL as fallback
             try:
                 with Image.open(processing_file) as img:
-                    metadata['width'] = img.width
-                    metadata['height'] = img.height
-                    metadata['file_format'] = img.format
+                    # For RAW files, prioritize exiftool dimensions over PIL (which reads preview)
+                    file_ext = Path(file_path).suffix.lower()
+                    is_raw_file = file_ext in self.RAW_FORMATS
+                    
+                    if is_raw_file and exiftool_data.get('ImageWidth') and exiftool_data.get('ImageHeight'):
+                        # Use actual RAW dimensions from exiftool
+                        metadata['width'] = int(exiftool_data['ImageWidth'])
+                        metadata['height'] = int(exiftool_data['ImageHeight'])
+                        metadata['file_format'] = exiftool_data.get('FileType', img.format)
+                    else:
+                        # Use PIL dimensions for non-RAW files
+                        metadata['width'] = img.width
+                        metadata['height'] = img.height
+                        metadata['file_format'] = img.format
                 
                 # Extract EXIF data with PIL
                 exif = img.getexif()

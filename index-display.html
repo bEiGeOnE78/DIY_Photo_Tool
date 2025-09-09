@@ -622,6 +622,43 @@
         background: rgba(255, 170, 0, 0.2);
         transform: scale(0.95);
       }
+
+      /* Sort controls */
+      #sort-controls {
+        background: #1e1e1e;
+        border-bottom: 1px solid #333;
+        padding: 8px 12px;
+        display: flex !important;
+        align-items: center;
+        gap: 12px;
+        font-size: 11px;
+        color: #ccc;
+        min-height: 36px;
+        z-index: 100;
+        position: relative;
+      }
+      
+      .sort-btn {
+        background: #2a2a2a;
+        border: 1px solid #444;
+        color: #ccc;
+        padding: 4px 8px;
+        border-radius: 3px;
+        cursor: pointer;
+        font-size: 10px;
+        transition: all 0.2s;
+      }
+      
+      .sort-btn:hover {
+        background: #333;
+        border-color: #555;
+      }
+      
+      .sort-btn.active {
+        background: #0066cc;
+        border-color: #41aaff;
+        color: white;
+      }
       
       /* Command Palette - Spotlight style */
       #command-palette {
@@ -930,6 +967,11 @@
         <div class="gallery-header">Galleries</div>
       </div>
       <div id="gallery-area">
+        <div id="sort-controls">
+          <span>Sort:</span>
+          <button class="sort-btn active" id="sort-oldest">Oldest First</button>
+          <button class="sort-btn" id="sort-newest">Newest First</button>
+        </div>
         <div class="thumb-grid" id="thumbgrid"></div>
         <div id="singleview">
           <div class="bigimg-wrap" id="bigimgWrap">
@@ -5157,6 +5199,18 @@
             }
           },
           {
+            id: 'delete-current-gallery',
+            title: 'Delete Current Gallery',
+            subtitle: '⚠️ Permanently delete the currently loaded gallery folder and all its hard links',
+            icon: '🗑️',
+            keywords: ['delete', 'gallery', 'remove', 'destroy', 'current'],
+            category: 'maintenance',
+            action: () => {
+              closeCommandPalette();
+              executeDeleteCurrentGallery();
+            }
+          },
+          {
             id: 'process-new-images',
             title: 'Process New Images',
             subtitle: 'Extract metadata, detect faces, cluster faces, and generate thumbnails for new images',
@@ -5461,6 +5515,53 @@
         } catch (error) {
           console.error('Error rebuilding galleries list:', error);
           alert('❌ Error rebuilding galleries list. Check console for details.');
+        }
+      }
+      
+      async function executeDeleteCurrentGallery() {
+        if (!currentGallery) {
+          alert('No gallery currently loaded. Please load a gallery first.');
+          return;
+        }
+        
+        const galleryPath = currentGallery.replace('/image_data.json', '');
+        const galleryName = galleryPath.split('/').pop();
+        
+        // First confirmation
+        const firstConfirmed = confirm(`⚠️ DELETE GALLERY: "${galleryName}"?\n\n🚨 WARNING: This action CANNOT be undone!\n\nThis will permanently delete:\n• The entire gallery folder\n• All hard-linked image files in the gallery\n• Gallery metadata and configuration\n\n❌ Original photos in "Master Photo Library" will NOT be affected\n\nAre you sure you want to continue?`);
+        
+        if (!firstConfirmed) return;
+        
+        // Second confirmation with typing requirement
+        const typedConfirmation = prompt(`⚠️ FINAL CONFIRMATION\n\nTo permanently delete the gallery "${galleryName}", type: DELETE\n\n(Type exactly: DELETE)`);
+        
+        if (typedConfirmation !== 'DELETE') {
+          if (typedConfirmation !== null) {
+            alert('❌ Deletion cancelled. You must type exactly "DELETE" to confirm.');
+          }
+          return;
+        }
+        
+        try {
+          showCommandLoading('Deleting gallery... This cannot be undone.');
+          
+          // For now, provide manual deletion instructions since there's no API
+          const confirmed = confirm(`⚠️ MANUAL DELETION REQUIRED\n\nThe web interface cannot directly delete folders for security reasons.\n\nTo complete the deletion:\n\n1. Open a terminal\n2. Run: rm -rf "${galleryPath}"\n3. Update galleries list in the web interface\n\nProceed to update the galleries list now?`);
+          
+          if (confirmed) {
+            // Just rebuild the galleries list
+            const response = await fetch(`http://${window.location.hostname}:8001/api/rebuild-galleries-list`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' }
+            });
+            
+            if (response.ok) {
+              alert(`⚠️ Please manually delete the folder:\n\nrm -rf "${galleryPath}"\n\nThen refresh this page.`);
+            }
+          }
+        } catch (error) {
+          console.error('Error in gallery deletion process:', error);
+          alert(`❌ Please manually delete the folder:\n\nrm -rf "${galleryPath}"\n\nThen refresh the page.`);
         }
       }
       
@@ -5967,10 +6068,64 @@
         }
       }
 
+      // Sorting functionality
+      let currentSortOrder = 'oldest'; // Default to oldest first
+      
+      function sortImages(order) {
+        if (!images || images.length === 0) return;
+        
+        const sortedImages = [...images].sort((a, b) => {
+          // Try different date fields, prioritizing DateTimeOriginal
+          const dateA = new Date(a.DateTimeOriginal || a.DateTime || a.FileModifyDate || 0);
+          const dateB = new Date(b.DateTimeOriginal || b.DateTime || b.FileModifyDate || 0);
+          
+          if (order === 'oldest') {
+            return dateA - dateB; // Oldest first
+          } else {
+            return dateB - dateA; // Newest first  
+          }
+        });
+        
+        // Update global images array
+        images = sortedImages;
+        currentSortOrder = order;
+        
+        // Update button states
+        document.getElementById('sort-oldest').classList.toggle('active', order === 'oldest');
+        document.getElementById('sort-newest').classList.toggle('active', order === 'newest');
+        
+        // Re-render thumbnails with new order
+        renderThumbnails();
+        
+        // Reset current index to 0 to show first image in new order
+        current = 0;
+        if (mode === "single") {
+          loadImage(current);
+        }
+        
+        // Update preload queue with new order
+        createPreloadQueue();
+      }
+      
+      function initializeSortControls() {
+        document.getElementById('sort-oldest').addEventListener('click', () => {
+          if (currentSortOrder !== 'oldest') {
+            sortImages('oldest');
+          }
+        });
+        
+        document.getElementById('sort-newest').addEventListener('click', () => {
+          if (currentSortOrder !== 'newest') {
+            sortImages('newest');
+          }
+        });
+      }
+
       // Initialize touch support and status feed after page loads
       document.addEventListener('DOMContentLoaded', function() {
         initializeTouchSupport();
         initializeStatusFeed();
+        initializeSortControls();
       });
     </script>
   </body>

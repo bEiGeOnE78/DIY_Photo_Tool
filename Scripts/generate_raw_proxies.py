@@ -31,7 +31,7 @@ RAW_EXTENSIONS = {'.cr2', '.cr3', '.nef', '.arw', '.dng', '.raf', '.orf', '.rw2'
 RAWTHERAPEE_QUALITY = 98  # Higher JPEG quality
 RAWTHERAPEE_CHROMA_SUBSAMPLING = 3  # Best quality (4:4:4)
 RAWTHERAPEE_TIMEOUT = 300  # 5 minutes per file (more time for quality processing)
-DEFAULT_CAMERA_STANDARD = "RawTherapee Presets/Standard_A7C.pp3"  # Default camera standard
+DEFAULT_CAMERA_STANDARD = "RawTherapee Presets/Standard_D7200.pp3"  # Default camera standard
 DEFAULT_STYLE_PRESET = None  # No default style preset - camera standard only
 
 def setup_proxy_directory():
@@ -123,6 +123,7 @@ def get_camera_standard_from_exif(image_id, use_full_version=False):
     # Regular versions: tone curve/look table disabled (for film sim use)
     # Full versions: tone curve/look table enabled (for camera-only use)
     camera_mappings = {
+        'D7200': 'Standard_D7200_Full.pp3' if use_full_version else 'Standard_D7200.pp3',
         'A7C': 'Standard_A7C_Full.pp3' if use_full_version else 'Standard_A7C.pp3',
         'LX100': 'Standard_LX100_Full.pp3' if use_full_version else 'Standard_LX100.pp3',
         'X-E4': 'Standard_XE4_Full.pp3' if use_full_version else 'Standard_XE4.pp3',
@@ -160,37 +161,53 @@ def convert_raw_to_adjacent_jpg(source_path, image_id=None, camera_standard=None
         if quality is None:
             quality = RAWTHERAPEE_QUALITY
         
-        # Check if presets exist
-        camera_path = Path(camera_standard)
-        style_path = Path(style_preset)
-        
-        if not camera_path.exists():
-            print(f"   ⚠️ Camera standard not found: {camera_standard}, using default settings")
-        if not style_path.exists():
-            print(f"   ⚠️ Style preset not found: {style_preset}, using default settings")
-        
-        # Get exposure preset path
-        exposure_preset = f"RawTherapee Presets/Exposure_{exposure:+g}.pp3" if exposure != 0 else "RawTherapee Presets/Exposure_0.pp3"
-        exposure_path = Path(exposure_preset)
+        # Validate and prepare preset paths
+        camera_path = None
+        style_path = None
+        exposure_path = None
+
+        # Check camera preset
+        if camera_standard:
+            camera_path = Path(camera_standard)
+            if not camera_path.exists():
+                print(f" ⚠ Camera standard not found: {camera_standard}, using default settings")
+                camera_path = None
+
+        # Check style preset
+        if style_preset and style_preset != "None":
+            style_path = Path(style_preset)
+            if not style_path.exists():
+                print(f" ⚠ Style preset not found: {style_preset}, using default settings")
+                style_path = None
+
+        # Check exposure preset (skip if exposure is 0)
+        if exposure != 0:
+            exposure_preset = f"RawTherapee Presets/Exposure_{exposure:+g}.pp3"
+            exposure_path = Path(exposure_preset)
+            if not exposure_path.exists():
+                print(f" ⚠ Exposure preset not found: {exposure_preset}, skipping exposure adjustment")
+                exposure_path = None
         
         # Use RawTherapee CLI with optimized settings for best quality
         # Order: Camera Standard -> Exposure -> Film Simulation
         cmd = ['rawtherapee-cli']
         
-        # Add camera standard first (base settings)
-        if camera_path.exists():
+        # Specify output directory (same as source)
+        source_path_obj = Path(source_path)
+        cmd.extend(['-o', str(source_path_obj.parent)])
+
+        # Add presets in order: Camera Standard -> Exposure -> Style
+        if camera_path:
             cmd.extend(['-p', str(camera_path.resolve())])
-            print(f"   📷 Using camera standard: {camera_path.name}")
-        
-        # Add exposure adjustment second
-        if exposure_path.exists():
+            print(f" 📷 Using camera standard: {camera_path.name}")
+
+        if exposure_path:
             cmd.extend(['-p', str(exposure_path.resolve())])
-            print(f"   ⚡ Using exposure: {exposure:+g} EV")
-        
-        # Add style preset third (stacked on top)
-        if style_path.exists():
+            print(f" ⚡ Using exposure: {exposure:+g} EV")
+
+        if style_path:
             cmd.extend(['-p', str(style_path.resolve())])
-            print(f"   🎨 Using style preset: {style_path.name}")
+            print(f" 🎨 Using style preset: {style_path.name}")
         
         cmd.extend([
             f'-j{quality}',  # JPEG quality
@@ -201,22 +218,28 @@ def convert_raw_to_adjacent_jpg(source_path, image_id=None, camera_standard=None
         ])
         
         print(f"   🔧 RawTherapee command: {' '.join(cmd)}")
+
+        # Execute command
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=RAWTHERAPEE_TIMEOUT)
-        
+
         # Check if adjacent JPG was created
-        source_path_obj = Path(source_path)
         adjacent_jpg = source_path_obj.with_suffix('.jpg')
-        
+
         if adjacent_jpg.exists():
             return True, str(adjacent_jpg), "RawTherapee CLI (adjacent JPG)"
         else:
+            # Provide more detailed error information
             error_msg = result.stderr.strip() if result.stderr else "No adjacent JPG created"
+            if result.returncode != 0:
+                error_msg += f" (exit code: {result.returncode})"
+            if result.stdout:
+                error_msg += f" | stdout: {result.stdout.strip()}"
             return False, None, f"RawTherapee CLI error: {error_msg}"
-            
+
     except subprocess.TimeoutExpired:
         return False, None, "RawTherapee CLI timeout"
     except FileNotFoundError:
-        return False, None, "RawTherapee CLI not found"
+        return False, None, "RawTherapee CLI not found in PATH"
     except Exception as e:
         return False, None, f"RawTherapee CLI exception: {e}"
 

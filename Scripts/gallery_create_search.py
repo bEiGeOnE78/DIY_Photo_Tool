@@ -487,7 +487,7 @@ class SearchGalleryCreator:
         
         # Build final query
         where_clause = " AND ".join(conditions) if conditions else "1=1"
-        final_query = f"{base_query} WHERE {where_clause} ORDER BY i.date_original DESC"
+        final_query = f"{base_query} WHERE {where_clause} ORDER BY i.date_original ASC"
         
         return final_query, params
     

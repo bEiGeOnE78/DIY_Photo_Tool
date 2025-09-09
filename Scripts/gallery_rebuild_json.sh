@@ -328,8 +328,8 @@ def get_sort_date(item):
             return datetime.min
     return datetime.min
 
-gallery_data.sort(key=get_sort_date, reverse=True)
-print(f"📅 Sorted by date (newest first): {len(gallery_data)} images")
+gallery_data.sort(key=get_sort_date, reverse=False)
+print(f"📅 Sorted by date (oldest first): {len(gallery_data)} images")
 
 # Write JSON file
 with open('$JSON_FILE', 'w') as f:
