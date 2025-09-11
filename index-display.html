@@ -1878,12 +1878,38 @@
         });
       }
       
+      // Store thumbnail selection state for restoration
+      let savedThumbnailSelection = new Set();
+      
       function hideThumbnailHighlights() {
+        // Save current selection state before hiding
+        savedThumbnailSelection.clear();
+        const thumbCells = document.querySelectorAll('.thumb-cell.selected');
+        thumbCells.forEach((cell, index) => {
+          const thumbIndex = parseInt(cell.dataset.index);
+          if (!isNaN(thumbIndex)) {
+            savedThumbnailSelection.add(thumbIndex);
+          }
+        });
+        
         // Clear thumbnail selection visual highlights
-        const thumbCells = document.querySelectorAll('.thumb-cell');
-        thumbCells.forEach(cell => {
+        const allThumbCells = document.querySelectorAll('.thumb-cell');
+        allThumbCells.forEach(cell => {
           cell.classList.remove('selected');
         });
+      }
+      
+      function restoreThumbnailHighlights() {
+        // Restore previously saved thumbnail selections
+        if (savedThumbnailSelection.size > 0) {
+          const thumbCells = document.querySelectorAll('.thumb-cell');
+          thumbCells.forEach(cell => {
+            const thumbIndex = parseInt(cell.dataset.index);
+            if (savedThumbnailSelection.has(thumbIndex)) {
+              cell.classList.add('selected');
+            }
+          });
+        }
       }
       
       function selectGalleryByIndex(index) {
@@ -1902,14 +1928,25 @@
       }
       
       function focusGallerySelector() {
+        // Validate gallery selector exists and is visible
+        const gallerySelector = document.getElementById('gallery-selector');
+        if (!gallerySelector || !gallerySelectorOpen) {
+          console.warn('Cannot focus gallery selector: not found or not visible');
+          return;
+        }
+        
         gallerySelectorFocused = true;
         
         // Add visual focus indicator
-        const gallerySelector = document.getElementById('gallery-selector');
         gallerySelector.classList.add('focused');
         
         // Find current active gallery and highlight it, or start with first gallery
         const galleryItems = document.querySelectorAll('.gallery-item');
+        if (galleryItems.length === 0) {
+          console.warn('No gallery items found');
+          return;
+        }
+        
         const activeGallery = document.querySelector('.gallery-item.active');
         
         if (activeGallery) {
@@ -1924,7 +1961,7 @@
           }
         }
         
-        // Hide thumbnail highlights
+        // Hide thumbnail highlights (saves state for restoration)
         hideThumbnailHighlights();
         
         // Gallery selector is now focused
@@ -1936,7 +1973,9 @@
         
         // Remove visual focus indicator
         const gallerySelector = document.getElementById('gallery-selector');
-        gallerySelector.classList.remove('focused');
+        if (gallerySelector) {
+          gallerySelector.classList.remove('focused');
+        }
         
         // Clear keyboard selection styling
         document.querySelectorAll('.gallery-item.keyboard-selected').forEach(item => {
@@ -1947,6 +1986,11 @@
         document.querySelectorAll('.gallery-item.gallery-focused').forEach(item => {
           item.classList.remove('gallery-focused');
         });
+        
+        // Restore thumbnail highlights if we're not switching galleries
+        if (!gallerySelectorOpen) {
+          restoreThumbnailHighlights();
+        }
         
         // Gallery selector focus cleared
       }
@@ -4848,7 +4892,7 @@
           toggleReject();
         }
         if (e.key === "l") togglePicksList();
-        if (e.key === "g") toggleGallerySelector();
+        // 'g' key handler removed - sophisticated 'g' behavior is handled earlier in the keydown handler
         if (e.key === "o") toggleFaceDetection(); // Changed from 'f' to 'o' to avoid conflict
         if (e.key === "s") toggleStatusFeed(); // Toggle status feed log
       });
