@@ -39,8 +39,9 @@ class PhotoManager:
         print("16. 🔍 Database Debug (inspect/troubleshoot)")
         print("17. 🛠️ Database Cleanup (remove stale entries)")
         print("18. 🗑️  Delete Culled Images (cleanup)")
-        print("19. ⚙️  Install Dependencies (complete toolkit + RAW support)")
-        print("20. ❌ Exit")
+        print("19. 🗂️  Delete Galleries (cleanup)")
+        print("20. ⚙️  Install Dependencies (complete toolkit + RAW support)")
+        print("21. ❌ Exit")
         print("=" * 60)
 
     def run_script(self, script_name, args=None, is_python=True):
@@ -988,6 +989,109 @@ class PhotoManager:
         else:
             print("❌ Cancelled - no files deleted")
 
+    def delete_galleries(self):
+        """Delete galleries and update galleries.json."""
+        import json
+        import shutil
+        
+        print("\n🗂️ DELETE GALLERIES")
+        print("-" * 40)
+        print("This allows you to delete gallery folders and update the galleries list.")
+        print("⚠️ WARNING: This action cannot be undone!")
+        print("Features:")
+        print("  • Removes hard link gallery folders completely")
+        print("  • Updates JSON/galleries.json automatically")  
+        print("  • Original photos in Master Photo Library remain safe")
+        
+        galleries_json_path = self.base_dir / "JSON" / "galleries.json"
+        
+        # Load galleries list
+        try:
+            with open(galleries_json_path, 'r') as f:
+                galleries = json.load(f)
+        except FileNotFoundError:
+            print("❌ No galleries.json found. Run gallery server first.")
+            return
+        except json.JSONDecodeError:
+            print("❌ Invalid galleries.json file.")
+            return
+            
+        if not galleries:
+            print("📭 No galleries found.")
+            return
+            
+        print(f"\n📋 Found {len(galleries)} galleries:")
+        for i, gallery in enumerate(galleries, 1):
+            gallery_path = self.base_dir / gallery['jsonPath'].replace('/image_data.json', '')
+            size = f"({gallery['imageCount']} images)" if gallery['imageCount'] > 0 else "(empty)"
+            exists = "✅" if gallery_path.exists() else "❌ Missing"
+            print(f"  {i:2d}. {gallery['name']} {size} {exists}")
+        
+        print("\nEnter gallery numbers to delete (comma-separated, or 'all'):")
+        selection = input("Galleries to delete: ").strip()
+        
+        if not selection:
+            print("❌ No selection made.")
+            return
+        
+        galleries_to_delete = []
+        
+        if selection.lower() == 'all':
+            if input(f"\n⚠️ Delete ALL {len(galleries)} galleries? (y/N): ").lower().startswith('y'):
+                galleries_to_delete = list(range(len(galleries)))
+        else:
+            try:
+                indices = [int(x.strip()) - 1 for x in selection.split(',')]
+                galleries_to_delete = [i for i in indices if 0 <= i < len(galleries)]
+            except ValueError:
+                print("❌ Invalid input. Please enter numbers separated by commas.")
+                return
+        
+        if not galleries_to_delete:
+            print("❌ No valid galleries selected.")
+            return
+            
+        # Show confirmation
+        print(f"\n🗑️ Will delete {len(galleries_to_delete)} galleries:")
+        for i in galleries_to_delete:
+            print(f"  • {galleries[i]['name']} ({galleries[i]['imageCount']} images)")
+        
+        if not input(f"\nType 'DELETE' to confirm: ").strip() == 'DELETE':
+            print("❌ Cancelled - no galleries deleted")
+            return
+            
+        # Delete galleries
+        deleted_count = 0
+        remaining_galleries = []
+        
+        for i, gallery in enumerate(galleries):
+            if i in galleries_to_delete:
+                gallery_path = self.base_dir / gallery['jsonPath'].replace('/image_data.json', '')
+                try:
+                    if gallery_path.exists():
+                        shutil.rmtree(gallery_path)
+                        print(f"✅ Deleted: {gallery['name']}")
+                        deleted_count += 1
+                    else:
+                        print(f"⚠️ Already gone: {gallery['name']}")
+                        deleted_count += 1
+                except Exception as e:
+                    print(f"❌ Failed to delete {gallery['name']}: {e}")
+            else:
+                remaining_galleries.append(gallery)
+        
+        # Update galleries.json
+        try:
+            with open(galleries_json_path, 'w') as f:
+                json.dump(remaining_galleries, f, indent=2)
+            print(f"\n✅ Updated galleries.json ({len(remaining_galleries)} remaining)")
+        except Exception as e:
+            print(f"❌ Failed to update galleries.json: {e}")
+            
+        print(f"\n🎉 Successfully deleted {deleted_count} galleries!")
+        if deleted_count > 0:
+            print("💡 Refresh your web browser to see the updated gallery list.")
+
     def install_dependencies(self):
         """Install complete toolkit dependencies including RAW support."""
         print("\n⚙️ INSTALL DEPENDENCIES")
@@ -1072,14 +1176,16 @@ class PhotoManager:
                 elif choice == "18":
                     self.delete_culled()
                 elif choice == "19":
-                    self.install_dependencies()
+                    self.delete_galleries()
                 elif choice == "20":
+                    self.install_dependencies()
+                elif choice == "21":
                     print("\n👋 Goodbye!")
                     break
                 else:
-                    print("❌ Invalid choice. Please enter 1-20.")
+                    print("❌ Invalid choice. Please enter 1-21.")
 
-                if choice != "19":
+                if choice != "20":
                     input("\nPress Enter to continue...")
 
             except KeyboardInterrupt:

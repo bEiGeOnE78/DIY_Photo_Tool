@@ -72,6 +72,22 @@
         background: #4CAF50;
         color: white;
       }
+      .gallery-item.keyboard-selected {
+        background: #804dcc;
+        border-color: #b366ff;
+      }
+      .gallery-item.keyboard-selected .gallery-count-badge {
+        background: #9966cc;
+        color: white;
+      }
+      .gallery-selector.focused {
+        border: 2px solid #9966cc;
+        background: rgba(153, 102, 204, 0.1);
+      }
+      .gallery-item.active.gallery-focused {
+        background: #0066cc;
+        border: 2px solid #9966cc;
+      }
       .gallery-header {
         font-weight: 600;
         margin-bottom: 8px;
@@ -963,7 +979,7 @@
   </head>
   <body>
     <div id="main">
-      <div id="gallery-selector">
+      <div id="gallery-selector" class="visible">
         <div class="gallery-header">Galleries</div>
       </div>
       <div id="gallery-area">
@@ -1054,6 +1070,21 @@
       </div>
     </div>
     <script>
+      // Dynamic API configuration based on current host
+      function getApiBaseUrl() {
+        const host = window.location.hostname;
+        const port = 8001; // Face API server port
+        
+        // If accessing via localhost, use localhost for API
+        if (host === 'localhost' || host === '127.0.0.1') {
+          return `http://localhost:${port}`;
+        }
+        // Otherwise, use the same host as the current page
+        return `http://${host}:${port}`;
+      }
+      
+      const API_BASE_URL = getApiBaseUrl();
+      
       let images = [],
         current = 0,
         mode = "thumbs",
@@ -1062,7 +1093,7 @@
         rejects = new Set(),
         galleries = [],
         currentGallery = null,
-        gallerySelectorOpen = false,
+        gallerySelectorOpen = true,
         facesVisible = false,
         selectedThumbnails = new Set(),
         cullMode = false,
@@ -1797,6 +1828,127 @@
         updateStatusIndicator();
         scrollThumbIntoView(newIndex);
         loadSidebar(newIndex).catch(console.error);
+      }
+      
+      let selectedGalleryIndex = -1; // Track which gallery is highlighted during navigation
+      let gallerySelectorFocused = false; // Track if gallery selector has keyboard focus
+      
+      function handleGalleryNavigation(dir) {
+        const galleryItems = document.querySelectorAll('.gallery-item');
+        if (galleryItems.length === 0) return;
+        
+        // Hide thumbnail highlights while navigating galleries
+        hideThumbnailHighlights();
+        
+        // Initialize selection if not set
+        if (selectedGalleryIndex === -1) {
+          selectedGalleryIndex = 0;
+        } else {
+          // Move selection
+          selectedGalleryIndex += dir;
+          
+          // Wrap around
+          if (selectedGalleryIndex < 0) {
+            selectedGalleryIndex = galleryItems.length - 1;
+          } else if (selectedGalleryIndex >= galleryItems.length) {
+            selectedGalleryIndex = 0;
+          }
+        }
+        
+        // Update visual highlighting
+        galleryItems.forEach((item, index) => {
+          // Clear all selection classes first
+          item.classList.remove('keyboard-selected', 'gallery-focused');
+          
+          if (index === selectedGalleryIndex) {
+            if (item.classList.contains('active')) {
+              // If this is the active gallery, use special focused styling
+              item.classList.add('gallery-focused');
+            } else {
+              // Regular purple highlighting for non-active galleries
+              item.classList.add('keyboard-selected');
+            }
+          }
+        });
+        
+        // Scroll the selected gallery into view
+        galleryItems[selectedGalleryIndex].scrollIntoView({
+          behavior: 'smooth',
+          block: 'nearest'
+        });
+      }
+      
+      function hideThumbnailHighlights() {
+        // Clear thumbnail selection visual highlights
+        const thumbCells = document.querySelectorAll('.thumb-cell');
+        thumbCells.forEach(cell => {
+          cell.classList.remove('selected');
+        });
+      }
+      
+      function selectGalleryByIndex(index) {
+        const galleryItems = document.querySelectorAll('.gallery-item');
+        if (index >= 0 && index < galleryItems.length) {
+          const galleryItem = galleryItems[index];
+          const galleryPath = galleryItem.dataset.galleryPath;
+          const galleryName = galleryItem.textContent.trim();
+          
+          // Clear keyboard selection styling and focus
+          clearGalleryFocus();
+          
+          // Load the gallery
+          loadGallery(galleryPath, galleryName);
+        }
+      }
+      
+      function focusGallerySelector() {
+        gallerySelectorFocused = true;
+        
+        // Add visual focus indicator
+        const gallerySelector = document.getElementById('gallery-selector');
+        gallerySelector.classList.add('focused');
+        
+        // Find current active gallery and highlight it, or start with first gallery
+        const galleryItems = document.querySelectorAll('.gallery-item');
+        const activeGallery = document.querySelector('.gallery-item.active');
+        
+        if (activeGallery) {
+          // If there's an active gallery, highlight it with special styling
+          selectedGalleryIndex = Array.from(galleryItems).indexOf(activeGallery);
+          activeGallery.classList.add('gallery-focused');
+        } else {
+          // Start with first gallery if no active gallery
+          selectedGalleryIndex = 0;
+          if (galleryItems.length > 0) {
+            galleryItems[0].classList.add('keyboard-selected');
+          }
+        }
+        
+        // Hide thumbnail highlights
+        hideThumbnailHighlights();
+        
+        // Gallery selector is now focused
+      }
+      
+      function clearGalleryFocus() {
+        gallerySelectorFocused = false;
+        selectedGalleryIndex = -1;
+        
+        // Remove visual focus indicator
+        const gallerySelector = document.getElementById('gallery-selector');
+        gallerySelector.classList.remove('focused');
+        
+        // Clear keyboard selection styling
+        document.querySelectorAll('.gallery-item.keyboard-selected').forEach(item => {
+          item.classList.remove('keyboard-selected');
+        });
+        
+        // Clear focused active gallery styling
+        document.querySelectorAll('.gallery-item.gallery-focused').forEach(item => {
+          item.classList.remove('gallery-focused');
+        });
+        
+        // Gallery selector focus cleared
       }
       
       function enterZoom() {
@@ -4047,6 +4199,15 @@
           images = [];
           current = 0;
           selectedThumbnails.clear(); // Clear selection when switching galleries
+          
+          // Clear visual thumbnail highlights
+          document.querySelectorAll('.thumb-cell.selected').forEach(cell => {
+            cell.classList.remove('selected');
+          });
+          
+          // Clear gallery keyboard navigation state
+          clearGalleryFocus();
+          
           preloadCache.clear(); // Clear preload cache when switching galleries
           stopPreloading(); // Stop background preloading for previous gallery
           clearAdjacentElements(); // Clear adjacent image elements
@@ -4519,6 +4680,8 @@
       document.addEventListener("keydown", (e) => {
         if (e.repeat) return;
         
+        // DEBUG: console.log('Keydown event:', e.key, 'inputFieldFocused:', inputFieldFocused, 'commandPaletteOpen:', commandPaletteOpen);
+        
         // Skip keyboard shortcuts when an input field is focused (except for command palette)
         if (inputFieldFocused && !commandPaletteOpen) return;
         
@@ -4603,6 +4766,46 @@
           // Block other keys in cull mode
           e.preventDefault();
           return;
+        }
+        
+        // Handle gallery 'g' key behavior
+        if (e.key === "g") {
+          if (!gallerySelectorOpen) {
+            // Gallery bar is hidden - show it and focus it
+            toggleGallerySelector();
+            focusGallerySelector();
+          } else if (gallerySelectorFocused) {
+            // Gallery bar is visible and focused - hide it
+            clearGalleryFocus();
+            toggleGallerySelector();
+          } else {
+            // Gallery bar is visible but not focused - focus it
+            focusGallerySelector();
+          }
+          e.preventDefault();
+          return;
+        }
+        
+        // Handle gallery navigation - arrow keys auto-focus gallery selector
+        if (gallerySelectorOpen && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+          if (!gallerySelectorFocused) focusGallerySelector(); // Auto-focus on arrow keys
+          handleGalleryNavigation(e.key === "ArrowDown" ? 1 : -1);
+          e.preventDefault();
+          return;
+        }
+        
+        // Handle gallery selection and escape
+        if (gallerySelectorOpen && gallerySelectorFocused) {
+          if (e.key === "Enter" && selectedGalleryIndex >= 0) {
+            selectGalleryByIndex(selectedGalleryIndex);
+            e.preventDefault();
+            return;
+          }
+          if (e.key === "Escape") {
+            clearGalleryFocus();
+            e.preventDefault();
+            return;
+          }
         }
         
         // Normal mode keys
@@ -4694,29 +4897,8 @@
       // initDeferredLoading(); // Disabled - using immediate loading
       
       loadGalleries().then(() => {
-        // Try to load a default gallery if available
-        if (galleries.length > 0) {
-          loadGallery(galleries[0].jsonPath, galleries[0].name);
-        } else {
-          // Fallback to old behavior - try to load image_data.json from root
-          fetch(`image_data.json?t=${Date.now()}`)
-            .then((r) => r.json())
-            .then((json) => {
-              images = json;
-              if (images.length > 0) {
-                selectedThumbnails.add(0);
-              }
-              renderThumbnails();
-              updateSelectionDisplay();
-              updatePickClasses();
-              loadSidebar(0).catch(console.error);
-              sidebar.classList.add("visible");
-            })
-            .catch(() => {
-              console.log("No galleries found. Generate a gallery first.");
-              thumbgrid.innerHTML = '<div style="padding: 20px; text-align: center; color: #ccc;">No galleries found. Run generate_display_gallery.sh first.</div>';
-            });
-        }
+        // Show gallery selection message instead of auto-loading first gallery
+        showGallerySelectionMessage();
         sidebar.classList.add("visible");
       });
 
@@ -5727,7 +5909,7 @@
         try {
           const result = await trackOperation(
             `Create Gallery: ${galleryName}`, 
-            'http://192.168.68.120:8001/api/create-gallery',
+            `${API_BASE_URL}/api/create-gallery`,
             { search_string: searchString, gallery_name: galleryName }
           );
           
@@ -5750,7 +5932,7 @@
         showCommandLoading('Creating face sample gallery...');
         
         try {
-          const response = await fetch('http://192.168.68.120:8001/api/create-gallery', {
+          const response = await fetch(`${API_BASE_URL}/api/create-gallery`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -5785,7 +5967,7 @@
         showCommandLoading('Creating picks gallery...');
         
         try {
-          const response = await fetch('http://192.168.68.120:8001/api/create-gallery', {
+          const response = await fetch(`${API_BASE_URL}/api/create-gallery`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -6068,6 +6250,77 @@
         }
       }
 
+      // Gallery selection message
+      function showGallerySelectionMessage() {
+        // Clear existing content
+        images = [];
+        current = 0;
+        currentGallery = null; // Reset current gallery so keyboard navigation works
+        
+        // Create selection message
+        const message = `
+          <div style="
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 60vh;
+            width: 100%;
+            padding: 40px;
+            text-align: center;
+            color: #ccc;
+            font-family: system-ui, -apple-system, sans-serif;
+            box-sizing: border-box;
+          ">
+            <div style="
+              font-size: 48px;
+              margin-bottom: 24px;
+              opacity: 0.6;
+            ">📸</div>
+            <h2 style="
+              font-size: 28px;
+              margin: 0 0 16px 0;
+              color: #fff;
+              font-weight: 300;
+            ">Select a Gallery</h2>
+            <p style="
+              font-size: 16px;
+              margin: 0 0 24px 0;
+              opacity: 0.8;
+              max-width: 400px;
+              line-height: 1.5;
+            ">Choose a gallery from the sidebar to view your photos. Use the arrow keys to navigate the gallery list.</p>
+            <div style="
+              font-size: 14px;
+              opacity: 0.6;
+              padding: 16px 24px;
+              background: rgba(255,255,255,0.05);
+              border-radius: 8px;
+              border: 1px solid rgba(255,255,255,0.1);
+            ">
+              📋 ${galleries.length} galleries available
+            </div>
+          </div>
+        `;
+        
+        // Update thumbnail grid with message
+        thumbgrid.innerHTML = message;
+        
+        // Clear single view
+        document.querySelector('#singleview .bigimg-wrap').innerHTML = '';
+        
+        // Update mode and navigation
+        mode = "thumbs";
+        const singleViewEl = document.getElementById('single-view');
+        const gridViewEl = document.getElementById('grid-view');
+        if (singleViewEl) singleViewEl.classList.remove('active');
+        if (gridViewEl) gridViewEl.classList.add('active');
+        
+        // Clear selections
+        selectedThumbnails.clear();
+        updateSelectionDisplay();
+      }
+
       // Sorting functionality
       let currentSortOrder = 'oldest'; // Default to oldest first
       
@@ -6126,6 +6379,17 @@
         initializeTouchSupport();
         initializeStatusFeed();
         initializeSortControls();
+        
+        // Add click handler to gallery selector for focusing
+        const gallerySelector = document.getElementById('gallery-selector');
+        if (gallerySelector) {
+          gallerySelector.addEventListener('click', function(e) {
+            // Only focus if clicking on the selector itself or header, not on gallery items
+            if (e.target === gallerySelector || e.target.classList.contains('gallery-header')) {
+              focusGallerySelector();
+            }
+          });
+        }
       });
     </script>
   </body>

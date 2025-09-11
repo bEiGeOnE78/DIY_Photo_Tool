@@ -2209,6 +2209,7 @@ def create_handler_class(db_path):
 def main():
     parser = argparse.ArgumentParser(description='Face detection API server')
     parser.add_argument('--port', type=int, default=8001, help='Server port')
+    parser.add_argument('--bind', default='127.0.0.1', help='Bind address (default: 127.0.0.1)')
     parser.add_argument('--db', help='Database file path (auto-detected if not specified)')
     
     args = parser.parse_args()
@@ -2222,9 +2223,9 @@ def main():
             args.db = "Scripts/image_metadata.db"  # Scripts subdirectory
     
     handler_class = create_handler_class(args.db)
-    server = HTTPServer(('192.168.68.120', args.port), handler_class)
+    server = HTTPServer((args.bind, args.port), handler_class)
     
-    print(f"🚀 Face API server starting on http://192.168.68.120:{args.port}")
+    print(f"🚀 Face API server starting on http://{args.bind}:{args.port}")
     print(f"📊 Database: {args.db}")
     print("🔍 Endpoints:")
     print(f"   GET /api/faces/{{image_id}} - Get faces for image")
