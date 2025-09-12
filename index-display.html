@@ -4889,27 +4889,23 @@
           return;
         }
         
-        // Handle gallery 'g' key behavior
+        // Handle gallery 'g' key behavior - close gallery if open, open if closed
         if (e.key === "g") {
-          if (!gallerySelectorOpen) {
-            // Gallery bar is hidden - show it and focus it
-            toggleGallerySelector();
-            focusGallerySelector();
-          } else if (gallerySelectorFocused) {
-            // Gallery bar is visible and focused - hide it
+          if (gallerySelectorOpen) {
+            // Gallery bar is open - close it
             clearGalleryFocus();
             toggleGallerySelector();
           } else {
-            // Gallery bar is visible but not focused - focus it
-            focusGallerySelector();
+            // Gallery bar is closed - open it (but don't focus)
+            toggleGallerySelector();
           }
           e.preventDefault();
           return;
         }
         
-        // Handle gallery navigation - arrow keys auto-focus gallery selector
-        if (gallerySelectorOpen && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
-          if (!gallerySelectorFocused) focusGallerySelector(); // Auto-focus on arrow keys
+        // Handle gallery navigation - Shift+Up/Down when gallery is open
+        if (gallerySelectorOpen && e.shiftKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+          if (!gallerySelectorFocused) focusGallerySelector(); // Auto-focus on Shift+arrow keys
           handleGalleryNavigation(e.key === "ArrowDown" ? 1 : -1);
           e.preventDefault();
           return;
