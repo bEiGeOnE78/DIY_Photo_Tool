@@ -103,6 +103,26 @@ class FaceAPIHandler(BaseHTTPRequestHandler):
                 self.send_cors_headers()
                 self.send_json_response({'exists': proxy_exists})
             
+            elif len(path_parts) >= 2 and path_parts[0] == 'api' and path_parts[1] == 'load-picks':
+                # GET /api/load-picks
+                picks_list = self.load_picks_from_file()
+                if picks_list is not None:
+                    self.send_response(200)
+                    self.send_cors_headers()
+                    self.send_json_response({'picks': picks_list})
+                else:
+                    self.send_error(500, "Failed to load picks")
+            
+            elif len(path_parts) >= 2 and path_parts[0] == 'api' and path_parts[1] == 'load-rejects':
+                # GET /api/load-rejects
+                rejects_list = self.load_rejects_from_file()
+                if rejects_list is not None:
+                    self.send_response(200)
+                    self.send_cors_headers()
+                    self.send_json_response({'rejects': rejects_list})
+                else:
+                    self.send_error(500, "Failed to load rejects")
+            
             else:
                 self.send_error(404, "API endpoint not found")
                 
@@ -1579,6 +1599,42 @@ class FaceAPIHandler(BaseHTTPRequestHandler):
         except Exception as e:
             self.broadcast_progress(f"❌ Error saving rejects: {e}", "error")
             return False
+    
+    def load_picks_from_file(self):
+        """Load picks list from picks.json file."""
+        try:
+            picks_file = self.get_json_path('picks.json')
+            if os.path.exists(picks_file):
+                with open(picks_file, 'r') as f:
+                    picks_list = json.load(f)
+                
+                self.broadcast_progress(f"📂 Loaded {len(picks_list)} picks from {picks_file}", "info")
+                return picks_list
+            else:
+                # No picks file exists - return empty list (this is normal)
+                return []
+                
+        except Exception as e:
+            self.broadcast_progress(f"❌ Error loading picks: {e}", "error")
+            return None
+    
+    def load_rejects_from_file(self):
+        """Load rejects list from delete_list.json file."""
+        try:
+            rejects_file = self.get_json_path('delete_list.json')
+            if os.path.exists(rejects_file):
+                with open(rejects_file, 'r') as f:
+                    rejects_list = json.load(f)
+                
+                self.broadcast_progress(f"🗑️ Loaded {len(rejects_list)} rejects from {rejects_file}", "info")
+                return rejects_list
+            else:
+                # No rejects file exists - return empty list (this is normal)
+                return []
+                
+        except Exception as e:
+            self.broadcast_progress(f"❌ Error loading rejects: {e}", "error")
+            return None
     
     def create_gallery_from_search(self, search_string, gallery_name, face_samples=False, picks_file=None):
         """Create gallery using search string via the gallery creation script."""

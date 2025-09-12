@@ -2307,6 +2307,65 @@
         }
       }
       
+      async function loadPicksFromAPI() {
+        try {
+          const response = await fetch(`http://${window.location.hostname}:8001/api/load-picks`);
+          if (response.ok) {
+            const data = await response.json();
+            if (data.picks && Array.isArray(data.picks)) {
+              picks.clear();
+              data.picks.forEach(imageId => picks.add(imageId));
+              console.log(`✅ Loaded ${picks.size} picks from server`);
+              return true;
+            }
+          } else if (response.status === 404) {
+            // No picks file exists yet - this is normal
+            console.log('ℹ️ No existing picks file found (this is normal for new installations)');
+            return true;
+          } else {
+            console.warn('⚠️ Failed to load picks from server');
+          }
+        } catch (error) {
+          console.error('❌ Error loading picks:', error);
+        }
+        return false;
+      }
+      
+      async function loadRejectsFromAPI() {
+        try {
+          const response = await fetch(`http://${window.location.hostname}:8001/api/load-rejects`);
+          if (response.ok) {
+            const data = await response.json();
+            if (data.rejects && Array.isArray(data.rejects)) {
+              rejects.clear();
+              data.rejects.forEach(imageId => rejects.add(imageId));
+              console.log(`✅ Loaded ${rejects.size} rejects from server`);
+              return true;
+            }
+          } else if (response.status === 404) {
+            // No rejects file exists yet - this is normal
+            console.log('ℹ️ No existing rejects file found (this is normal for new installations)');
+            return true;
+          } else {
+            console.warn('⚠️ Failed to load rejects from server');
+          }
+        } catch (error) {
+          console.error('❌ Error loading rejects:', error);
+        }
+        return false;
+      }
+      
+      async function initializePicksAndRejects() {
+        console.log('🔄 Loading picks and rejects from server...');
+        await Promise.all([
+          loadPicksFromAPI(),
+          loadRejectsFromAPI()
+        ]);
+        // Update visual indicators after loading
+        updatePickClasses();
+        console.log(`📊 Initialization complete: ${picks.size} picks, ${rejects.size} rejects`);
+      }
+      
       function enterCullMode() {
         if (selectedThumbnails.size < 2) {
           alert("Select at least 2 images to enter cull mode");
@@ -4279,7 +4338,10 @@
           renderGalleries(); // Update active state
           renderThumbnails();
           updateSelectionDisplay();
-          updatePickClasses();
+          
+          // Load picks and rejects, then update visual indicators
+          initializePicksAndRejects();
+          
           loadSidebar(0).catch(console.error);
           
           console.log(`Loaded gallery: ${galleryName} (${images.length} images)`);
@@ -6423,6 +6485,9 @@
         initializeTouchSupport();
         initializeStatusFeed();
         initializeSortControls();
+        
+        // Initialize picks and rejects from server
+        initializePicksAndRejects();
         
         // Add click handler to gallery selector for focusing
         const gallerySelector = document.getElementById('gallery-selector');
