@@ -335,8 +335,9 @@ class PhotoManager:
         print("2. 🖼️  Generate thumbnails for fast loading")
         print("3. 🖼️  Generate HEIC proxies for web viewing")
         print("4. 🎞️  Generate RAW proxies for RAW file viewing")
-        print("5. 👥 Extract faces from all images")
-        print("6. 🔗 Add new faces to existing people clusters")
+        print("5. 📹 Generate video proxies for fast playback")
+        print("6. 👥 Extract faces from all images")
+        print("7. 🔗 Add new faces to existing people clusters")
         print()
 
         directory = input(
@@ -397,8 +398,16 @@ class PhotoManager:
         if not raw_proxy_success:
             print("⚠️ RAW proxy generation failed, but continuing...")
 
-        # Step 5: Extract Faces
-        print("\n👥 STEP 5: Extracting faces from all images...")
+        # Step 5: Generate Video Proxies
+        print("\n📹 STEP 5: Generating video proxies...")
+        print("-" * 40)
+        video_proxy_success = self.run_script("Scripts/generate_video_proxies.py")
+
+        if not video_proxy_success:
+            print("⚠️ Video proxy generation failed, but continuing...")
+
+        # Step 6: Extract Faces
+        print("\n👥 STEP 6: Extracting faces from all images...")
         print("-" * 40)
         face_extract_success = self.run_script(
             "Scripts/face_recognizer_insightface.py", ["--extract"]
@@ -407,8 +416,8 @@ class PhotoManager:
         if not face_extract_success:
             print("⚠️ Face extraction failed, but continuing...")
 
-        # Step 6: Cluster New Faces
-        print("\n🔗 STEP 6: Adding new faces to existing clusters (iterative)...")
+        # Step 7: Cluster New Faces
+        print("\n🔗 STEP 7: Adding new faces to existing clusters (iterative)...")
         print("-" * 40)
         cluster_success = self.run_script(
             "Scripts/face_recognizer_insightface.py", ["--cluster-new-loop"]

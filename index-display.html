@@ -309,6 +309,12 @@
       }
       .bigvideo {
         display: none; /* Hidden by default, shown when video is loaded */
+        width: 100% !important;
+        height: 100% !important;
+        min-width: 640px !important;
+        min-height: 360px !important;
+        max-width: 100vw !important;
+        max-height: 100vh !important;
       }
       .bigimg.picked, .bigvideo.picked {
         border: 4px solid #0f0;
@@ -1148,6 +1154,15 @@
       const bigimg = document.getElementById("bigimg");
       const bigvideo = document.getElementById("bigvideo");
       const singleview = document.getElementById("singleview");
+      
+      // Debug video element at page load
+      console.log('🎬 Video element at page load:', {
+        bigvideo: bigvideo,
+        exists: !!bigvideo,
+        inDOM: bigvideo && bigvideo.parentElement !== null,
+        allVideoElements: document.querySelectorAll('video'),
+        bigimgWrapContent: document.getElementById('bigimgWrap') ? document.getElementById('bigimgWrap').innerHTML : 'NO WRAP'
+      });
       const sidebar = document.getElementById("sidebar");
       const commandPalette = document.getElementById("command-palette");
       const commandInput = document.getElementById("command-input");
@@ -1514,7 +1529,13 @@
           return forceTimestamp ? proxyPath + '?t=' + Date.now() : proxyPath;
         }
         
-        // Use original file for non-HEIC files
+        // Check if this is a video file - in galleries, they're already proxy files
+        if (isVideoFile(cleanSrc)) {
+          // Video files in galleries are already the correct proxy files
+          return forceTimestamp ? cleanSrc + '?t=' + Date.now() : cleanSrc;
+        }
+        
+        // Use original file for other files
         const finalSrc = cleanSrc;
         return forceTimestamp ? finalSrc + '?t=' + Date.now() : finalSrc;
       }
@@ -1532,12 +1553,74 @@
         const isRejected = rejects.has(imageId);
         
         if (isVideoFile(cleanOriginalSrc)) {
+          // Debug logging for video loading
+          console.log('🎬 Loading video:', {
+            cleanOriginalSrc: cleanOriginalSrc,
+            displaySrc: displaySrc,
+            imageId: imageId,
+            bigvideoElement: bigvideo,
+            bigvideoExists: !!bigvideo,
+            bigvideoInDOM: bigvideo && bigvideo.parentElement !== null,
+            bigvideoId: bigvideo ? bigvideo.id : 'NO ELEMENT'
+          });
+          
+          // Use fresh DOM lookup instead of potentially detached cached variable
+          const videoElement = document.getElementById('bigvideo');
+          console.log('🎬 Fresh video element check:', {
+            element: videoElement,
+            exists: !!videoElement,
+            inDOM: videoElement && videoElement.parentElement !== null,
+            parentTag: videoElement && videoElement.parentElement ? videoElement.parentElement.tagName : 'NO PARENT'
+          });
+          
+          if (!videoElement) {
+            console.error('🎬 ERROR: Video element not found in DOM!');
+            return;
+          }
+          
+          if (!videoElement.parentElement) {
+            console.error('🎬 ERROR: Video element exists but not attached to DOM!');
+            return;
+          }
+          
+          // Add event listeners for debugging video loading
+          videoElement.addEventListener('loadstart', () => console.log('🎬 Video loadstart event'), { once: true });
+          videoElement.addEventListener('loadedmetadata', () => console.log('🎬 Video loadedmetadata event'), { once: true });
+          videoElement.addEventListener('canplay', () => console.log('🎬 Video canplay event'), { once: true });
+          videoElement.addEventListener('error', (e) => console.error('🎬 Video error:', e, videoElement.error), { once: true });
+          
           // Show video, hide image
-          bigvideo.src = displaySrc;
-          bigvideo.style.display = "block";
+          console.log('🎬 Setting video src to:', displaySrc);
+          console.log('🎬 Current base URL:', window.location.origin);
+          
+          // For videos, ensure we use absolute URL to prevent URI issues
+          const absoluteVideoSrc = displaySrc.startsWith('http') ? displaySrc : `http://localhost:8000/${displaySrc}`;
+          console.log('🎬 Absolute video URL:', absoluteVideoSrc);
+          
+          videoElement.src = absoluteVideoSrc;
+          videoElement.style.display = "block";
           bigimg.style.display = "none";
-          bigvideo.classList.toggle("picked", isPicked);
-          bigvideo.classList.toggle("rejected", isRejected);
+          
+          console.log('🎬 Video src after setting:', videoElement.src);
+          videoElement.classList.toggle("picked", isPicked);
+          videoElement.classList.toggle("rejected", isRejected);
+          
+          // Auto-play the video immediately after setting source
+          console.log('🎬 Starting immediate auto-play...');
+          setTimeout(() => {
+            videoElement.play().then(() => {
+              console.log('🎬 Immediate auto-play successful!');
+            }).catch(err => {
+              console.log('🎬 Immediate auto-play failed, will retry on canplay:', err.message);
+            });
+          }, 100);
+          
+          console.log('🎬 Video element after src set:', {
+            src: bigvideo.src,
+            display: bigvideo.style.display,
+            readyState: bigvideo.readyState,
+            networkState: bigvideo.networkState
+          });
           
           // Update status indicator dot
           const statusIndicator = document.getElementById('statusIndicator');
@@ -1546,6 +1629,74 @@
           
           // Load faces for videos (if any)
           bigvideo.addEventListener('loadedmetadata', () => loadFacesForCurrentImage(), { once: true });
+          
+          // Additional debugging after video is ready
+          bigvideo.addEventListener('canplay', () => {
+            console.log('🎬 Video ready to play - element state:', {
+              src: bigvideo.src,
+              display: bigvideo.style.display,
+              visibility: getComputedStyle(bigvideo).visibility,
+              width: bigvideo.offsetWidth,
+              height: bigvideo.offsetHeight,
+              clientWidth: bigvideo.clientWidth,
+              clientHeight: bigvideo.clientHeight,
+              controls: bigvideo.controls,
+              paused: bigvideo.paused,
+              readyState: bigvideo.readyState,
+              videoWidth: bigvideo.videoWidth,
+              videoHeight: bigvideo.videoHeight,
+              duration: bigvideo.duration,
+              parentElement: bigvideo.parentElement,
+              zIndex: getComputedStyle(bigvideo).zIndex
+            });
+            
+            // Debug parent container dimensions
+            const parent = bigvideo.parentElement;
+            if (parent) {
+              console.log('🎬 Parent container state:', {
+                tagName: parent.tagName,
+                className: parent.className,
+                offsetWidth: parent.offsetWidth,
+                offsetHeight: parent.offsetHeight,
+                clientWidth: parent.clientWidth,
+                clientHeight: parent.clientHeight,
+                computedStyle: {
+                  width: getComputedStyle(parent).width,
+                  height: getComputedStyle(parent).height,
+                  display: getComputedStyle(parent).display,
+                  position: getComputedStyle(parent).position
+                }
+              });
+            } else {
+              console.error('🎬 Video element has no parent! Element not attached to DOM.');
+            }
+            
+            // Debug grandparent container
+            if (parent) {
+              const grandParent = parent.parentElement;
+              if (grandParent) {
+                console.log('🎬 Grandparent container state:', {
+                  tagName: grandParent.tagName,
+                  className: grandParent.className,
+                  offsetWidth: grandParent.offsetWidth,
+                  offsetHeight: grandParent.offsetHeight,
+                  computedStyle: {
+                    width: getComputedStyle(grandParent).width,
+                    height: getComputedStyle(grandParent).height,
+                    display: getComputedStyle(grandParent).display
+                  }
+                });
+              }
+            }
+            
+            // Try to play the video automatically for testing
+            console.log('🎬 Attempting backup auto-play...');
+            videoElement.play().then(() => {
+              console.log('🎬 Backup auto-play successful!');
+            }).catch(err => {
+              console.error('🎬 Backup auto-play failed:', err);
+            });
+          }, { once: true });
         } else {
           // Show image, hide video (use JPG proxy for HEIC files)
           bigimg.src = displaySrc;
@@ -4949,6 +5100,14 @@
           e.preventDefault();
         }
         if (e.key === "q" || e.key === "Q") {
+          // Stop any playing video
+          const currentVideo = document.getElementById('bigvideo');
+          if (currentVideo && !currentVideo.paused) {
+            console.log('🎬 Stopping video on "q" key press');
+            currentVideo.pause();
+            currentVideo.currentTime = 0; // Reset to beginning
+          }
+          
           if (mode === "zoom") exitZoom();
           else if (mode === "fit") showThumbs();
           else if (mode === "thumbs") {
@@ -6423,8 +6582,14 @@
         // Update thumbnail grid with message
         thumbgrid.innerHTML = message;
         
-        // Clear single view
-        document.querySelector('#singleview .bigimg-wrap').innerHTML = '';
+        // Clear single view but preserve the img and video elements
+        const bigimgWrap = document.querySelector('#singleview .bigimg-wrap');
+        if (bigimgWrap) {
+          bigimgWrap.innerHTML = `
+            <img id="bigimg" class="bigimg" draggable="false" />
+            <video id="bigvideo" class="bigvideo" controls></video>
+          `;
+        }
         
         // Update mode and navigation
         mode = "thumbs";

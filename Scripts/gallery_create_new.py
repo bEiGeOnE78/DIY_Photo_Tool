@@ -27,13 +27,29 @@ class GalleryCreator:
         self.gallery_root.mkdir(exist_ok=True)
         
     def get_hard_link_source(self, row):
-        """Determine the correct hard link source for a file, handling RAW files."""
+        """Determine the correct hard link source for a file, handling RAW files and videos."""
         original_path = row['path']
         try:
             raw_proxy_type = row['raw_proxy_type']
         except (KeyError, IndexError):
             raw_proxy_type = None
+        
         image_id = row['id']
+        original_path_obj = Path(original_path)
+        file_ext = original_path_obj.suffix.lower()
+        
+        # Video file extensions
+        video_extensions = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v'}
+        
+        # Handle video files - check if proxy exists on disk
+        if file_ext in video_extensions:
+            proxy_path = f"Video Proxies/{image_id}.mp4"
+            if os.path.exists(proxy_path):
+                print(f"📹 Using video proxy for {row['filename']}: {proxy_path}")
+                return proxy_path
+            else:
+                # Use original video file
+                return original_path
         
         # For RAW files, determine the correct source
         if raw_proxy_type == 'custom_generated':
@@ -46,7 +62,6 @@ class GalleryCreator:
                 return None
         elif raw_proxy_type == 'original_jpg':
             # Use the adjacent JPG file
-            original_path_obj = Path(original_path)
             for ext in ['.jpg', '.jpeg', '.JPG', '.JPEG']:
                 adjacent_jpg = original_path_obj.with_suffix(ext)
                 if adjacent_jpg.exists():
@@ -55,9 +70,6 @@ class GalleryCreator:
             return None
         else:
             # Check if this is a RAW file that needs adjacent JPG detection
-            original_path_obj = Path(original_path)
-            file_ext = original_path_obj.suffix.lower()
-            
             # List of RAW file extensions
             raw_extensions = {'.cr2', '.nef', '.arw', '.dng', '.raf', '.rw2', '.orf', '.srw', '.x3f', '.3fr'}
             
@@ -101,18 +113,26 @@ class GalleryCreator:
         
         where_clause = " AND ".join(conditions) if conditions else "1=1"
         
-        # Modified query to exclude adjacent JPG files when corresponding RAW exists
+        # Modified query to include videos and exclude adjacent JPG files when corresponding RAW exists
         sql = f"""
             SELECT id, path, filename, date_original, camera_make, camera_model, 
-                   lens_model, file_format, has_faces, raw_proxy_type, 
+                   lens_model, file_format, has_faces, raw_proxy_type,
                    gps_latitude, gps_longitude, iso, aperture, shutter_speed, 
                    focal_length, focal_length_35mm, exposure_compensation, film_mode,
                    width, height
             FROM images i
             WHERE ({where_clause})
             AND (
-                -- Include all non-JPG files (including RAW files)
-                UPPER(filename) NOT LIKE '%.JPG' AND UPPER(filename) NOT LIKE '%.JPEG'
+                -- Include all video files
+                (UPPER(filename) LIKE '%.MP4' OR UPPER(filename) LIKE '%.MOV' OR 
+                 UPPER(filename) LIKE '%.AVI' OR UPPER(filename) LIKE '%.MKV' OR 
+                 UPPER(filename) LIKE '%.WEBM' OR UPPER(filename) LIKE '%.M4V')
+                OR
+                -- Include all non-JPG/non-video files (including RAW files)
+                (UPPER(filename) NOT LIKE '%.JPG' AND UPPER(filename) NOT LIKE '%.JPEG' AND
+                 UPPER(filename) NOT LIKE '%.MP4' AND UPPER(filename) NOT LIKE '%.MOV' AND
+                 UPPER(filename) NOT LIKE '%.AVI' AND UPPER(filename) NOT LIKE '%.MKV' AND
+                 UPPER(filename) NOT LIKE '%.WEBM' AND UPPER(filename) NOT LIKE '%.M4V')
                 OR
                 -- Include JPG files only if no corresponding RAW file exists
                 (
@@ -149,7 +169,7 @@ class GalleryCreator:
         
         sql = """
             SELECT DISTINCT i.id, i.path, i.filename, i.date_original, i.camera_make, 
-                   i.camera_model, i.lens_model, i.file_format, i.has_faces, i.raw_proxy_type, 
+                   i.camera_model, i.lens_model, i.file_format, i.has_faces, i.raw_proxy_type,
                    i.gps_latitude, i.gps_longitude, i.iso, i.aperture, i.shutter_speed, 
                    i.focal_length, i.focal_length_35mm, i.exposure_compensation, i.film_mode, 
                    i.width, i.height, f.confidence
@@ -158,8 +178,16 @@ class GalleryCreator:
             JOIN persons p ON f.person_id = p.id
             WHERE p.name = ?
             AND (
-                -- Include all non-JPG files (including RAW files)
-                UPPER(i.filename) NOT LIKE '%.JPG' AND UPPER(i.filename) NOT LIKE '%.JPEG'
+                -- Include all video files
+                (UPPER(i.filename) LIKE '%.MP4' OR UPPER(i.filename) LIKE '%.MOV' OR 
+                 UPPER(i.filename) LIKE '%.AVI' OR UPPER(i.filename) LIKE '%.MKV' OR 
+                 UPPER(i.filename) LIKE '%.WEBM' OR UPPER(i.filename) LIKE '%.M4V')
+                OR
+                -- Include all non-JPG/non-video files (including RAW files)
+                (UPPER(i.filename) NOT LIKE '%.JPG' AND UPPER(i.filename) NOT LIKE '%.JPEG' AND
+                 UPPER(i.filename) NOT LIKE '%.MP4' AND UPPER(i.filename) NOT LIKE '%.MOV' AND
+                 UPPER(i.filename) NOT LIKE '%.AVI' AND UPPER(i.filename) NOT LIKE '%.MKV' AND
+                 UPPER(i.filename) NOT LIKE '%.WEBM' AND UPPER(i.filename) NOT LIKE '%.M4V')
                 OR
                 -- Include JPG files only if no corresponding RAW file exists
                 (
