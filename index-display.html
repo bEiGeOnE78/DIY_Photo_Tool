@@ -315,6 +315,9 @@
         min-height: 360px !important;
         max-width: 100vw !important;
         max-height: 100vh !important;
+        pointer-events: auto !important; /* Ensure mouse interactions work */
+        z-index: 999 !important; /* Higher z-index to ensure it's not blocked */
+        position: relative !important; /* Ensure z-index takes effect */
       }
       .bigimg.picked, .bigvideo.picked {
         border: 4px solid #0f0;
@@ -1552,6 +1555,13 @@
         const isPicked = picks.has(imageId);
         const isRejected = rejects.has(imageId);
         
+        console.log('🎯 loadImage called for:', {
+          cleanOriginalSrc: cleanOriginalSrc,
+          displaySrc: displaySrc,
+          isVideo: isVideoFile(cleanOriginalSrc),
+          imageId: imageId
+        });
+        
         if (isVideoFile(cleanOriginalSrc)) {
           // Debug logging for video loading
           console.log('🎬 Loading video:', {
@@ -1589,6 +1599,9 @@
           videoElement.addEventListener('canplay', () => console.log('🎬 Video canplay event'), { once: true });
           videoElement.addEventListener('error', (e) => console.error('🎬 Video error:', e, videoElement.error), { once: true });
           
+          // Add simple interaction debugging
+          videoElement.addEventListener('click', () => console.log('🎬 Video controls clicked'));
+          
           // Show video, hide image
           console.log('🎬 Setting video src to:', displaySrc);
           console.log('🎬 Current base URL:', window.location.origin);
@@ -1597,9 +1610,29 @@
           const absoluteVideoSrc = displaySrc.startsWith('http') ? displaySrc : `http://localhost:8000/${displaySrc}`;
           console.log('🎬 Absolute video URL:', absoluteVideoSrc);
           
+          // Ensure proper display switching for videos
           videoElement.src = absoluteVideoSrc;
           videoElement.style.display = "block";
-          bigimg.style.display = "none";
+          
+          // Hide image element using fresh DOM lookup
+          const currentImageElement = document.getElementById('bigimg');
+          if (currentImageElement) {
+            currentImageElement.style.display = "none";
+          }
+          
+          console.log('🎬 Display set: video=block, image=none');
+          
+          // Ensure video is unmuted for autoplay
+          videoElement.muted = false;
+          videoElement.volume = 1.0; // Set to full volume
+          
+          // Debug key video properties
+          console.log('🎬 Video loaded:', {
+            fileName: cleanOriginalSrc.split('/').pop(),
+            dimensions: `${videoElement.offsetWidth}x${videoElement.offsetHeight}`,
+            muted: videoElement.muted,
+            controls: videoElement.controls
+          });
           
           console.log('🎬 Video src after setting:', videoElement.src);
           videoElement.classList.toggle("picked", isPicked);
@@ -1608,10 +1641,29 @@
           // Auto-play the video immediately after setting source
           console.log('🎬 Starting immediate auto-play...');
           setTimeout(() => {
+            // For Firefox/Zen browser compatibility, try unmuting again
+            videoElement.muted = false;
+            videoElement.volume = 1.0;
+            
             videoElement.play().then(() => {
               console.log('🎬 Immediate auto-play successful!');
+              // Force unmute after successful play
+              setTimeout(() => {
+                videoElement.muted = false;
+                videoElement.volume = 1.0;
+                console.log('🎬 Post-play unmute applied');
+              }, 50);
             }).catch(err => {
               console.log('🎬 Immediate auto-play failed, will retry on canplay:', err.message);
+              // If autoplay fails, try playing muted first then unmuting (Firefox workaround)
+              videoElement.muted = true;
+              videoElement.play().then(() => {
+                console.log('🎬 Playing muted, will unmute after user interaction');
+                videoElement.muted = false;
+                videoElement.volume = 1.0;
+              }).catch(err2 => {
+                console.log('🎬 Even muted autoplay failed:', err2.message);
+              });
             });
           }, 100);
           
@@ -1691,6 +1743,9 @@
             
             // Try to play the video automatically for testing
             console.log('🎬 Attempting backup auto-play...');
+            // Ensure unmuted before backup autoplay attempt
+            videoElement.muted = false;
+            videoElement.volume = 1.0;
             videoElement.play().then(() => {
               console.log('🎬 Backup auto-play successful!');
             }).catch(err => {
@@ -1699,13 +1754,29 @@
           }, { once: true });
         } else {
           // Show image, hide video (use JPG proxy for HEIC files)
-          bigimg.src = displaySrc;
-          bigimg.style.display = "block";
-          bigvideo.style.display = "none";
-          bigimg.classList.remove("pixelzoom");
-          bigimg.style.left = bigimg.style.top = "0px";
-          bigimg.classList.toggle("picked", isPicked);
-          bigimg.classList.toggle("rejected", isRejected);
+          const currentVideoElement = document.getElementById('bigvideo');
+          if (currentVideoElement) {
+            currentVideoElement.pause(); // Stop any playing video first
+            currentVideoElement.style.display = "none";
+            // Remove src attribute instead of setting to empty string to avoid invalid URI error
+            currentVideoElement.removeAttribute('src');
+            currentVideoElement.load(); // Reset the video element
+            console.log('🎬 Video hidden, paused, and source cleared for image display');
+          }
+          
+          // Ensure image element is properly configured
+          const currentImageElement = document.getElementById('bigimg');
+          if (currentImageElement) {
+            currentImageElement.src = displaySrc;
+            currentImageElement.style.display = "block";
+            currentImageElement.classList.remove("pixelzoom");
+            currentImageElement.style.left = currentImageElement.style.top = "0px";
+            currentImageElement.classList.toggle("picked", isPicked);
+            currentImageElement.classList.toggle("rejected", isRejected);
+            console.log('🖼️ Image displayed:', displaySrc.split('/').pop());
+          } else {
+            console.error('🖼️ ERROR: Image element not found!');
+          }
           
           // Update status indicator dot
           const statusIndicator = document.getElementById('statusIndicator');
