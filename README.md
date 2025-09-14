@@ -50,7 +50,7 @@ Central command-line interface for all photo management operations.
 - **Face Recognition** - AI-powered people detection and labeling
 
 ### 2. Web Gallery Interface (`index-display.html`)
-Modern browser-based photo viewer with advanced features.
+Modern browser-based photo viewer with advanced features and secure gallery management.
 
 **Key Features:**
 - **Command Palette** - Press `/` for spotlight-style commands
@@ -59,7 +59,9 @@ Modern browser-based photo viewer with advanced features.
 - **Face Detection Overlay** - See detected people with names
 - **Metadata Sidebar** - Complete EXIF data and GPS links
 - **Pick/Reject System** - Mark photos for organization
+- **Gallery Management** - Secure web-based gallery deletion with automatic refresh
 - **Touch Support** - Mobile-friendly interface
+- **Multi-API Integration** - Seamlessly uses all three servers
 
 **Keyboard Shortcuts:**
 - `/` - Open command palette
@@ -126,22 +128,40 @@ python Scripts/face_recognizer_insightface.py --stats
 - **Iterative Improvement** - Re-cluster after labeling
 - **Confidence Scoring** - Quality-based face filtering
 
-### 5. Face API Server (`Scripts/face_api_server.py`)
-REST API providing face data and photo processing services.
+### 5. Three-Server Architecture
 
-**Key Endpoints:**
+The system now uses a clean three-server architecture for optimal separation of concerns:
+
+#### Gallery Web Server (Port 8000)
+- **Static File Serving** - HTML, CSS, JavaScript, and thumbnails
+- **Main Interface** - Primary web gallery interface
+- **Launch Command** - `Scripts/start_gallery_server.sh`
+
+#### Face API Server (Port 8001) - `Scripts/face_api_server.py`
+**Face Recognition and Core Operations:**
 - `GET /api/faces/{image_id}` - Face detection data
 - `GET /api/stats` - System statistics
+- `GET /api/people` - All known people
 - `POST /api/create-gallery` - Create new galleries
 - `POST /api/process-new-images` - Automated processing workflow
 - `POST /api/save-picks` - Save photo selections
 - `POST /api/delete-rejects` - Safe file deletion
+- `POST /api/assign-face` - Face labeling operations
 
-**Features:**
-- **CORS Support** - Browser-compatible API
-- **Real-time Data** - Live face detection overlay
-- **Batch Operations** - Process multiple photos efficiently
-- **Safe File Handling** - Trash-based deletion with preview
+#### Gallery API Server (Port 8002) - `Scripts/gallery_api_server.py`
+**Gallery Management Operations:**
+- `GET /api/load-picks` - Load saved picks
+- `GET /api/load-rejects` - Load reject list
+- `POST /api/delete-gallery` - Secure gallery deletion
+- `POST /api/rebuild-galleries-list` - Refresh gallery index
+- `POST /api/save-picks` - Save photo selections
+- `POST /api/save-rejects` - Save reject list
+
+**Shared Features:**
+- **CORS Support** - Browser-compatible APIs
+- **Real-time Progress** - Server-sent events for status updates
+- **Security** - Path validation and whitelist protection
+- **Auto-detection** - Database and JSON path resolution
 
 ### 6. RAW Processing (`Scripts/generate_raw_proxies.py`)
 Advanced RAW file processing with custom presets.
@@ -329,7 +349,14 @@ python Scripts/face_recognizer_insightface.py --cluster-new-loop
 
 ## API Reference
 
-### Face API Server
+### Three-Server API Architecture
+
+#### Gallery Web Server (Port 8000)
+Start server: `Scripts/start_gallery_server.sh`
+- Static file serving (HTML, CSS, JS, thumbnails)
+- No API endpoints - serves web interface files
+
+#### Face API Server (Port 8001)
 Start server: `python Scripts/face_api_server.py --port 8001`
 
 **GET Endpoints:**
@@ -339,6 +366,7 @@ Start server: `python Scripts/face_api_server.py --port 8001`
 /api/people              # All known people
 /api/image-metadata/{id} # Complete image metadata
 /api/presets             # Available RAW presets
+/api/progress-log        # Real-time progress updates
 ```
 
 **POST Endpoints:**
@@ -348,13 +376,32 @@ Start server: `python Scripts/face_api_server.py --port 8001`
 /api/save-picks          # Save photo selections
 /api/save-rejects        # Save rejection list
 /api/delete-rejects      # Execute safe deletion
+/api/assign-face         # Face labeling operations
+/api/generate-raw-proxy  # RAW processing
+```
+
+#### Gallery API Server (Port 8002)
+Start server: `python Scripts/gallery_api_server.py --port 8002`
+
+**GET Endpoints:**
+```
+/api/load-picks          # Load saved picks
+/api/load-rejects        # Load reject list
+/api/progress-stream     # Server-sent events
+```
+
+**POST Endpoints:**
+```
+/api/delete-gallery      # Secure gallery deletion
 /api/rebuild-galleries-list # Refresh gallery index
+/api/save-picks          # Save photo selections
+/api/save-rejects        # Save reject list
 ```
 
 ### Web Interface Integration
 ```javascript
-// Create gallery via API
-fetch('/api/create-gallery', {
+// Create gallery via Face API Server (port 8001)
+fetch(`http://${window.location.hostname}:8001/api/create-gallery`, {
   method: 'POST',
   headers: {'Content-Type': 'application/json'},
   body: JSON.stringify({
@@ -363,11 +410,27 @@ fetch('/api/create-gallery', {
   })
 });
 
-// Get face data for image
-fetch(`/api/faces/${imageId}`)
+// Get face data for image from Face API Server
+fetch(`http://${window.location.hostname}:8001/api/faces/${imageId}`)
   .then(r => r.json())
   .then(faces => {
     // Display face overlays
+  });
+
+// Delete gallery via Gallery API Server (port 8002)
+fetch(`http://${window.location.hostname}:8002/api/delete-gallery`, {
+  method: 'POST',
+  headers: {'Content-Type': 'application/json'},
+  body: JSON.stringify({
+    gallery_path: galleryPath
+  })
+});
+
+// Load picks from Gallery API Server
+fetch(`http://${window.location.hostname}:8002/api/load-picks`)
+  .then(r => r.json())
+  .then(picks => {
+    // Process saved picks
   });
 ```
 

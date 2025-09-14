@@ -28,12 +28,27 @@ The =PhotoManager= class provides an interactive menu system serving as the main
 - =restart_gallery_server()= - Restart with gallery list rebuild
 - =face_recognition_menu()= - Face detection and labeling interface
 
-* 2. REST API Server (=Scripts/face_api_server.py=)
+* 2. Three-Server REST API Architecture
 
-** Base URL
+The system now uses three specialized servers for optimal separation of concerns:
+
+** Gallery Web Server (Port 8000)
+=http://localhost:8000/=
+- Static file serving (HTML, CSS, JavaScript)
+- No API endpoints - serves web interface
+- Launch: =Scripts/start_gallery_server.sh=
+
+** Face API Server (Port 8001)
 =http://localhost:8001/api/=
+- Face recognition and core photo operations
+- Launch: =python Scripts/face_api_server.py=
 
-** GET Endpoints
+** Gallery API Server (Port 8002)
+=http://localhost:8002/api/=
+- Gallery management and file operations
+- Launch: =python Scripts/gallery_api_server.py=
+
+** Face API Server GET Endpoints (Port 8001)
 - =GET /api/faces/{image_id}= - Face detection data for specific image
 - =GET /api/stats= - Comprehensive database statistics
 - =GET /api/people= - All identified people with face counts
@@ -43,7 +58,14 @@ The =PhotoManager= class provides an interactive menu system serving as the main
 - =GET /api/luts= - Available color correction LUTs
 - =GET /api/video-proxy-status/{image_id}= - Video proxy existence check
 
-** POST Endpoints
+** Gallery API Server GET Endpoints (Port 8002)
+- =GET /api/stats= - Basic system statistics
+- =GET /api/load-picks= - Load saved image picks from JSON
+- =GET /api/load-rejects= - Load saved reject list from JSON
+- =GET /api/progress-log?offset=N= - Real-time progress updates
+- =GET /api/progress-stream= - Server-sent events for real-time updates
+
+** Face API Server POST Endpoints (Port 8001)
 - =POST /api/save-picks= - Save image selections to JSON
 - =POST /api/save-rejects= - Save rejection list
 - =POST /api/assign-face= - Assign face to person
@@ -57,8 +79,13 @@ The =PhotoManager= class provides an interactive menu system serving as the main
 - =POST /api/delete-rejects= - Execute safe file deletion
 - =POST /api/create-gallery= - Create new gallery via search
 - =POST /api/rebuild-gallery-json= - Regenerate gallery JSON from database
-- =POST /api/rebuild-galleries-list= - Refresh gallery index
 - =POST /api/process-new-images= - Trigger automated processing
+
+** Gallery API Server POST Endpoints (Port 8002)
+- =POST /api/save-picks= - Save image selections to JSON
+- =POST /api/save-rejects= - Save rejection list
+- =POST /api/delete-gallery= - Secure gallery deletion with path validation
+- =POST /api/rebuild-galleries-list= - Refresh main gallery index
 
 * 3. Gallery Creation (=Scripts/gallery_create_search.py=)
 
@@ -204,10 +231,13 @@ python Scripts/face_recognizer_insightface.py --stats
 python photo_manager.py
 #+END_SRC
 
-** 2. API Access  
+** 2. API Access
 #+BEGIN_SRC bash
-# Start servers (option 11 in photo_manager.py)
-# Then use HTTP endpoints at http://localhost:8001/api/
+# Start all servers (option 11 in photo_manager.py)
+# Or start individually:
+bash Scripts/start_gallery_server.sh    # Port 8000 - Web interface
+python Scripts/face_api_server.py        # Port 8001 - Face operations
+python Scripts/gallery_api_server.py     # Port 8002 - Gallery management
 #+END_SRC
 
 ** 3. Search Galleries
@@ -242,8 +272,8 @@ python Scripts/face_recognizer_insightface.py --label 1 "John Smith"
 
 ** JavaScript Fetch API
 #+BEGIN_SRC javascript
-// Create gallery via API
-fetch('/api/create-gallery', {
+// Create gallery via Face API Server (port 8001)
+fetch(`http://${window.location.hostname}:8001/api/create-gallery`, {
   method: 'POST',
   headers: {'Content-Type': 'application/json'},
   body: JSON.stringify({
@@ -252,11 +282,27 @@ fetch('/api/create-gallery', {
   })
 });
 
-// Get face data for image
-fetch(`/api/faces/${imageId}`)
+// Get face data for image from Face API Server
+fetch(`http://${window.location.hostname}:8001/api/faces/${imageId}`)
   .then(r => r.json())
   .then(faces => {
     // Display face overlays
+  });
+
+// Delete gallery via Gallery API Server (port 8002)
+fetch(`http://${window.location.hostname}:8002/api/delete-gallery`, {
+  method: 'POST',
+  headers: {'Content-Type': 'application/json'},
+  body: JSON.stringify({
+    gallery_path: galleryPath
+  })
+});
+
+// Load picks from Gallery API Server
+fetch(`http://${window.location.hostname}:8002/api/load-picks`)
+  .then(r => r.json())
+  .then(picks => {
+    // Process saved picks
   });
 #+END_SRC
 
@@ -264,15 +310,25 @@ fetch(`/api/faces/${imageId}`)
 #+BEGIN_SRC python
 import requests
 
-# Get system statistics
+# Get system statistics from Face API Server
 response = requests.get('http://localhost:8001/api/stats')
 stats = response.json()
 
-# Save picks to file
+# Save picks to file via Face API Server
 picks_data = {'picks': [123, 456, 789]}
 response = requests.post(
     'http://localhost:8001/api/save-picks',
     json=picks_data
+)
+
+# Load picks from Gallery API Server
+response = requests.get('http://localhost:8002/api/load-picks')
+picks = response.json()
+
+# Delete gallery via Gallery API Server
+response = requests.post(
+    'http://localhost:8002/api/delete-gallery',
+    json={'gallery_path': '/path/to/gallery'}
 )
 #+END_SRC
 
