@@ -1447,6 +1447,12 @@
         singleview.style.zIndex = "1";    // Send single view to back
         singleview.classList.remove('visible');
         
+        // Reset video z-index when switching to thumbnail mode
+        const videoEl = document.getElementById('bigvideo');
+        if (videoEl) {
+          videoEl.style.zIndex = "1";
+        }
+        
         // Hide all adjacent images but keep them in DOM for fast re-entry
         Object.values(adjacentImages).forEach(img => {
           if (img) img.style.opacity = "0";
@@ -1613,6 +1619,7 @@
           // Ensure proper display switching for videos
           videoElement.src = absoluteVideoSrc;
           videoElement.style.display = "block";
+          videoElement.style.zIndex = "999"; // Restore high z-index for control interaction
           
           // Hide image element using fresh DOM lookup
           const currentImageElement = document.getElementById('bigimg');
@@ -4531,7 +4538,16 @@
           if (mode !== "thumbs") {
             mode = "thumbs";
             singleview.classList.remove("visible");
+            // Also clear z-index to ensure thumbnail grid is shown
+            singleview.style.zIndex = "1";
+            thumbgrid.style.zIndex = "200";
             thumbgrid.style.display = "grid";
+            
+            // Reset video z-index when forcing thumbnail mode
+            const videoEl = document.getElementById('bigvideo');
+            if (videoEl) {
+              videoEl.style.zIndex = "1";
+            }
           }
           
           // Clear current state immediately to prevent conflicts
@@ -4555,8 +4571,14 @@
           
           // Clear big image/video sources to prevent stale loads
           bigimg.src = '';
-          bigvideo.src = '';
-          bigvideo.style.display = 'none';
+          // Properly clear video without invalid URI error
+          const videoEl = document.getElementById('bigvideo');
+          if (videoEl) {
+            videoEl.pause();
+            videoEl.removeAttribute('src');
+            videoEl.load();
+            videoEl.style.display = 'none';
+          }
           bigimg.style.display = 'block';
           
           const response = await fetch(`${jsonPath}?t=${Date.now()}`);
@@ -4565,6 +4587,9 @@
           const galleryData = await response.json();
           images = galleryData;
           currentGallery = jsonPath;
+          
+          // Apply default sort order to new gallery
+          sortImages(currentSortOrder);
           
           // Initialize with first image selected
           if (images.length > 0) {
