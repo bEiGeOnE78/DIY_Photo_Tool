@@ -1484,17 +1484,91 @@ class FaceAPIHandler(BaseHTTPRequestHandler):
     def get_lens_stats(self, cursor):
         """Get lens usage statistics."""
         cursor.execute("""
-            SELECT 
-                COALESCE(lens_model, 'Unknown Lens') as lens,
+            SELECT
+                lens_model,
+                camera_make,
                 COUNT(*) as count
-            FROM images 
+            FROM images
             WHERE lens_model IS NOT NULL AND lens_model != ''
             GROUP BY lens_model
             ORDER BY count DESC
-            LIMIT 20
+            LIMIT 50
         """)
-        
-        return [{'lens': row['lens'], 'count': row['count']} for row in cursor.fetchall()]
+
+        # Process results to consolidate and standardize lens names
+        lens_counts = {}
+        for row in cursor.fetchall():
+            lens = str(row['lens_model']).strip() if row['lens_model'] else ''
+            camera_make = str(row['camera_make']).strip() if row['camera_make'] else ''
+            count = row['count']
+
+            if not lens:
+                continue
+
+            # Standardize lens name by ensuring manufacturer prefix
+            lens_clean = lens
+
+            # Check if lens already has a manufacturer prefix
+            has_prefix = False
+            manufacturer_prefixes = ['Nikon', 'Canon', 'Sony', 'Fujifilm', 'Olympus', 'Panasonic',
+                                    'Leica', 'Sigma', 'Tamron', 'Tokina', 'Zeiss', 'Samyang']
+
+            for brand in manufacturer_prefixes:
+                if lens.startswith(brand + ' '):
+                    has_prefix = True
+                    break
+
+            # If no prefix, try to determine manufacturer and add it
+            if not has_prefix:
+                manufacturer = ''
+
+                # Determine manufacturer from lens mount indicators
+                if any(lens.startswith(ind) for ind in ['AF-S', 'AF-P', 'AF ', 'Nikkor', 'DX ', 'FX ', 'Z ']):
+                    manufacturer = 'Nikon'
+                elif any(lens.startswith(ind) for ind in ['EF ', 'EF-S', 'RF ', 'EF-M', 'CN-E']):
+                    manufacturer = 'Canon'
+                elif any(lens.startswith(ind) for ind in ['FE ', 'E ', 'SEL']):
+                    manufacturer = 'Sony'
+                elif lens.startswith('XF ') or lens.startswith('XC '):
+                    manufacturer = 'Fujifilm'
+                elif lens.startswith('M.Zuiko'):
+                    manufacturer = 'Olympus'
+                elif lens.startswith('Lumix'):
+                    manufacturer = 'Panasonic'
+                # iPhone/phone cameras - keep as is
+                elif 'iPhone' in lens or 'phone' in lens.lower():
+                    pass  # Don't add manufacturer prefix for phone cameras
+                # Use camera make as fallback
+                elif camera_make:
+                    if 'NIKON' in camera_make.upper():
+                        manufacturer = 'Nikon'
+                    elif 'CANON' in camera_make.upper():
+                        manufacturer = 'Canon'
+                    elif 'SONY' in camera_make.upper():
+                        manufacturer = 'Sony'
+                    elif 'FUJI' in camera_make.upper():
+                        manufacturer = 'Fujifilm'
+                    elif 'OLYMPUS' in camera_make.upper():
+                        manufacturer = 'Olympus'
+                    elif 'PANASONIC' in camera_make.upper():
+                        manufacturer = 'Panasonic'
+
+                # Add manufacturer prefix if determined
+                if manufacturer:
+                    lens_clean = f"{manufacturer} {lens}"
+
+            # Aggregate counts for the same lens
+            if lens_clean in lens_counts:
+                lens_counts[lens_clean] += count
+            else:
+                lens_counts[lens_clean] = count
+
+        # Convert to list and sort by count
+        results = [{'lens': lens, 'count': count} for lens, count in lens_counts.items()]
+        results.sort(key=lambda x: x['count'], reverse=True)
+
+        # Return top 20
+        return results[:20]
     
     def get_focal_length_stats(self, cursor):
         """Get focal length (35mm equivalent) statistics."""
