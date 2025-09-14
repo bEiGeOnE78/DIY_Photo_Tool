@@ -105,21 +105,19 @@ class BaseAPIHandler(BaseHTTPRequestHandler):
     def broadcast_progress(self, message, message_type="info"):
         """Broadcast progress message to all connected clients."""
         from datetime import datetime
-        
+
         progress_data = {
             'timestamp': datetime.now().strftime('%H:%M:%S'),
             'message': message,
             'type': message_type
         }
-        
+
         self.send_progress_event(progress_data)
-        print(f"[{progress_data['timestamp']}] {message}")
     
     def log_message(self, format, *args):
-        """Override to provide custom logging."""
-        from datetime import datetime
-        timestamp = datetime.now().strftime('%H:%M:%S')
-        print(f"[{timestamp}] {format % args}")
+        """Override to provide minimal logging."""
+        # Only log to stdout like the original servers (web console only)
+        pass
 
 
 def create_server_factory(handler_class):
