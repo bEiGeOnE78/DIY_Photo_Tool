@@ -377,6 +377,14 @@ class GalleryAPIHandler(BaseAPIHandler):
 
             self.broadcast_progress(f"✅ Gallery renamed successfully: {old_name} → {new_name}", "success")
 
+            # Update SourceFile paths in image_data.json
+            self.broadcast_progress("🔄 Updating image paths in gallery JSON...", "info")
+            success = self.update_gallery_json_paths(new_abs_path, old_name, new_name)
+            if success:
+                self.broadcast_progress("✅ Gallery JSON paths updated", "success")
+            else:
+                self.broadcast_progress("⚠️ Warning: Could not update gallery JSON paths", "warning")
+
             # Automatically rebuild galleries list after rename
             rebuild_success, rebuild_message = self.rebuild_galleries_list()
             if rebuild_success:
@@ -393,6 +401,42 @@ class GalleryAPIHandler(BaseAPIHandler):
             error_msg = f"Error renaming gallery: {str(e)}"
             self.broadcast_progress(f"❌ {error_msg}", "error")
             return False, error_msg
+
+    def update_gallery_json_paths(self, gallery_path, old_name, new_name):
+        """Update SourceFile paths in gallery JSON after rename."""
+        try:
+            import json
+
+            json_file = gallery_path / "image_data.json"
+            if not json_file.exists():
+                return True  # No JSON file, nothing to update
+
+            # Read the JSON file
+            with open(json_file, 'r') as f:
+                gallery_data = json.load(f)
+
+            # Update SourceFile paths
+            updated_count = 0
+            old_path_prefix = f"Hard Link Galleries/{old_name}/"
+            new_path_prefix = f"Hard Link Galleries/{new_name}/"
+
+            for image in gallery_data:
+                if 'SourceFile' in image and image['SourceFile'].startswith(old_path_prefix):
+                    # Update the path
+                    old_source = image['SourceFile']
+                    image['SourceFile'] = old_source.replace(old_path_prefix, new_path_prefix, 1)
+                    updated_count += 1
+
+            # Write back the updated JSON
+            with open(json_file, 'w') as f:
+                json.dump(gallery_data, f, indent=2)
+
+            self.broadcast_progress(f"📝 Updated {updated_count} image paths in gallery JSON", "info")
+            return True
+
+        except Exception as e:
+            self.broadcast_progress(f"❌ Error updating gallery JSON: {str(e)}", "error")
+            return False
 
     # Placeholder methods - these would need to be implemented with the full functionality
     def get_comprehensive_stats(self):

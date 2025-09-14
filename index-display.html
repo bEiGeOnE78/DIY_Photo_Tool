@@ -1533,11 +1533,19 @@
       function getDisplaySource(meta, forceTimestamp = false) {
         const originalSrc = meta.SourceFile || meta.src || meta.FileName;
         const cleanSrc = originalSrc.replace(/^\.\//, "");
-        
+
         // Check if this is a RAW file with a custom proxy
         if (meta._imageId && meta.has_custom_proxy && meta.raw_proxy_type === 'custom_generated') {
           const proxyPath = `RAW Proxies/${meta._imageId}.jpg`;
           return forceTimestamp ? proxyPath + '?t=' + Date.now() : proxyPath;
+        }
+
+        // Check if this is a RAW file with adjacent JPEG (original_jpg type)
+        if (meta.raw_proxy_type === 'original_jpg' && meta._originalPath) {
+          // Use original path to find adjacent JPEG, not gallery hardlink path
+          const originalPath = meta._originalPath.replace(/^\.\//, "");
+          const adjacentJpeg = originalPath.replace(/\.(nef|cr2|cr3|arw|dng|orf|rw2|pef|srw|raf)$/i, '.jpg');
+          return forceTimestamp ? adjacentJpeg + '?t=' + Date.now() : adjacentJpeg;
         }
         
         // Check if this is a HEIC file and if we have a WebP proxy
