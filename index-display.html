@@ -6706,9 +6706,24 @@
         if (!images || images.length === 0) return;
         
         const sortedImages = [...images].sort((a, b) => {
+          // Normalize date strings to handle timezone inconsistencies between videos and photos
+          function normalizeDate(dateStr) {
+            if (!dateStr) return 0;
+            
+            // If date already has timezone info (videos), use as-is
+            if (dateStr.includes('+') || dateStr.includes('Z')) {
+              return new Date(dateStr);
+            }
+            
+            // If no timezone info (photos), treat as UTC to match videos
+            // Convert "2025-09-06 16:41:10" to "2025-09-06T16:41:10Z"
+            const normalizedStr = dateStr.replace(' ', 'T') + 'Z';
+            return new Date(normalizedStr);
+          }
+          
           // Try different date fields, prioritizing DateTimeOriginal
-          const dateA = new Date(a.DateTimeOriginal || a.DateTime || a.FileModifyDate || 0);
-          const dateB = new Date(b.DateTimeOriginal || b.DateTime || b.FileModifyDate || 0);
+          const dateA = normalizeDate(a.DateTimeOriginal || a.DateTime || a.FileModifyDate);
+          const dateB = normalizeDate(b.DateTimeOriginal || b.DateTime || b.FileModifyDate);
           
           if (order === 'oldest') {
             return dateA - dateB; // Oldest first
