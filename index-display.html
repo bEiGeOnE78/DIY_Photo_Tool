@@ -5989,46 +5989,43 @@
       function createStatsSection(title, data) {
         if (!data || (Array.isArray(data) && data.length === 0)) {
           return `
-            <div style="background: #2a2a2a; border-radius: 8px; padding: 20px; border: 1px solid #444;">
+            <div style="background: #2a2a2a; border-radius: 8px; padding: 20px; border: 1px solid #444; display: flex; flex-direction: column; height: 400px;">
               <h3 style="margin: 0 0 15px 0; color: #ccc; font-size: 18px;">${title}</h3>
               <p style="color: #999; margin: 0;">No data available</p>
             </div>
           `;
         }
-        
+
         let content = `
-          <div style="background: #2a2a2a; border-radius: 8px; padding: 20px; border: 1px solid #444;">
-            <h3 style="margin: 0 0 15px 0; color: #ccc; font-size: 18px;">${title}</h3>
+          <div style="background: #2a2a2a; border-radius: 8px; padding: 20px; border: 1px solid #444; display: flex; flex-direction: column; height: 400px;">
+            <h3 style="margin: 0 0 15px 0; color: #ccc; font-size: 18px; flex-shrink: 0;">${title}</h3>
+            <div style="flex: 1; overflow-y: auto; overflow-x: hidden; padding-right: 10px;">
         `;
-        
+
         if (typeof data === 'object' && !Array.isArray(data)) {
           // Simple key-value pairs
           for (const [key, value] of Object.entries(data)) {
             content += `
               <div style="display: flex; justify-content: space-between; margin-bottom: 8px; padding: 4px 0;">
                 <span style="color: #ddd;">${key}</span>
-                <span style="color: #4CAF50; font-weight: 600;">${value.toLocaleString()}</span>
+                <span style="color: #4CAF50; font-weight: 600; margin-left: 10px; white-space: nowrap;">${value.toLocaleString()}</span>
               </div>
             `;
           }
         } else if (Array.isArray(data)) {
-          // Array of objects with counts
-          data.slice(0, 10).forEach(item => {
+          // Array of objects with counts - show ALL items
+          data.forEach(item => {
             const name = item.name || item.camera || item.lens || item.focal_length || item.year || item.person || item.type || item.status || 'Unknown';
             content += `
               <div style="display: flex; justify-content: space-between; margin-bottom: 8px; padding: 4px 0;">
-                <span style="color: #ddd; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 10px;">${name}</span>
-                <span style="color: #4CAF50; font-weight: 600;">${item.count.toLocaleString()}</span>
+                <span style="color: #ddd; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 10px;" title="${name}">${name}</span>
+                <span style="color: #4CAF50; font-weight: 600; white-space: nowrap;">${item.count.toLocaleString()}</span>
               </div>
             `;
           });
-          
-          if (data.length > 10) {
-            content += `<div style="color: #999; text-align: center; margin-top: 10px; font-style: italic;">... and ${data.length - 10} more</div>`;
-          }
         }
-        
-        content += '</div>';
+
+        content += '</div></div>';
         return content;
       }
       

@@ -1446,7 +1446,7 @@ class FaceAPIHandler(BaseHTTPRequestHandler):
             WHERE camera_make IS NOT NULL AND camera_model IS NOT NULL
             GROUP BY camera_make, camera_model
             ORDER BY count DESC
-            LIMIT 50
+            -- No limit, return all
         """)
 
         # Process results to consolidate camera names
@@ -1479,7 +1479,7 @@ class FaceAPIHandler(BaseHTTPRequestHandler):
         # Convert back to list and sort by count
         results = [{'camera': name, 'count': count} for name, count in camera_counts.items()]
         results.sort(key=lambda x: x['count'], reverse=True)
-        return results[:20]  # Return top 20
+        return results  # Return all results
     
     def get_lens_stats(self, cursor):
         """Get lens usage statistics."""
@@ -1492,7 +1492,7 @@ class FaceAPIHandler(BaseHTTPRequestHandler):
             WHERE lens_model IS NOT NULL AND lens_model != ''
             GROUP BY lens_model
             ORDER BY count DESC
-            LIMIT 50
+            -- No limit, return all
         """)
 
         # Process results to consolidate and standardize lens names
@@ -1567,8 +1567,8 @@ class FaceAPIHandler(BaseHTTPRequestHandler):
         results = [{'lens': lens, 'count': count} for lens, count in lens_counts.items()]
         results.sort(key=lambda x: x['count'], reverse=True)
 
-        # Return top 20
-        return results[:20]
+        # Return all results
+        return results
     
     def get_focal_length_stats(self, cursor):
         """Get focal length (35mm equivalent) statistics."""
@@ -1580,7 +1580,7 @@ class FaceAPIHandler(BaseHTTPRequestHandler):
             WHERE focal_length_35mm IS NOT NULL AND focal_length_35mm != ''
             GROUP BY focal_length_35mm
             ORDER BY focal_length_35mm ASC
-            LIMIT 30
+            -- No limit, return all
         """)
 
         results = []
@@ -1627,7 +1627,7 @@ class FaceAPIHandler(BaseHTTPRequestHandler):
                 AND (f.ignored IS NULL OR f.ignored = 0)
             GROUP BY p.id, p.name
             ORDER BY count DESC
-            LIMIT 20
+            -- No limit, return all
         """)
         
         return [{'person': row['person'], 'count': row['count']} for row in cursor.fetchall()]
