@@ -462,6 +462,8 @@ class PhotoManager:
             server_process = subprocess.Popen(
                 ["bash", str(self.base_dir / "Scripts" / "start_local_servers.sh")],
                 cwd=str(self.base_dir),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
             )
 
             import time

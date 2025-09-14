@@ -2185,7 +2185,7 @@ class FaceAPIHandler(BaseHTTPRequestHandler):
         timestamp = time.strftime("%H:%M:%S")
         log_entry = f"[{timestamp}] [{event_type.upper()}] {message}\n"
         
-        # Print to console
+        # Print to console (hidden by CLI DEVNULL redirection, visible when run directly)
         print(log_entry.strip())
         
         # Write to progress log file
@@ -2195,7 +2195,7 @@ class FaceAPIHandler(BaseHTTPRequestHandler):
                 f.write(log_entry)
                 f.flush()
         except Exception as e:
-            print(f"Error writing to progress log: {e}")  # Keep as print since this is the log system itself
+            print(f"Error writing to progress log: {e}")  # Restored - hidden by CLI DEVNULL
     
     def get_progress_log(self, offset=0):
         """Get progress log entries from the specified offset."""
