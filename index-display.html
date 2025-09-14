@@ -1293,7 +1293,10 @@
           settingBadges.push(`<span class="leica-badge">${sign}${comp}EV</span>`);
         }
         if (meta.FocalLengthIn35mmFormat) {
-          settingBadges.push(`<span class="leica-badge">${meta.FocalLengthIn35mmFormat}</span>`);
+          const focalLength = String(meta.FocalLengthIn35mmFormat).replace(/[^\d.]/g, '');
+          if (focalLength && !isNaN(parseFloat(focalLength))) {
+            settingBadges.push(`<span class="leica-badge">${Math.round(parseFloat(focalLength))}mm</span>`);
+          }
         }
         
         // Add RAW badge (simplified - no async database call)
@@ -1333,8 +1336,14 @@
           table += `<tr><td>Camera</td><td>${[meta.Make, meta.Model].filter(Boolean).join(" ")}</td></tr>`;
         if (meta.LensModel)
           table += `<tr><td>Lens</td><td>${meta.LensModel}</td></tr>`;
-        if (meta.FocalLength)
-          table += `<tr><td>Focal</td><td>${meta.FocalLength}</td></tr>`;
+        if (meta.FocalLength) {
+          const focalLength = String(meta.FocalLength).replace(/[^\d.]/g, '');
+          if (focalLength && !isNaN(parseFloat(focalLength))) {
+            table += `<tr><td>Focal</td><td>${Math.round(parseFloat(focalLength))}mm</td></tr>`;
+          } else {
+            table += `<tr><td>Focal</td><td>${meta.FocalLength}</td></tr>`;
+          }
+        }
         // Add pixel dimensions (but not megapixels - will be in badges)
         // Check multiple possible field names for dimensions
         const tableWidth = meta.ImageWidth || meta.width;
@@ -5760,6 +5769,18 @@
             }
           },
           {
+            id: 'rename-current-gallery',
+            title: 'Rename Current Gallery',
+            subtitle: 'Rename the currently loaded gallery folder',
+            icon: '📝',
+            keywords: ['rename', 'gallery', 'name', 'change', 'current'],
+            category: 'maintenance',
+            action: () => {
+              closeCommandPalette();
+              executeRenameCurrentGallery();
+            }
+          },
+          {
             id: 'delete-current-gallery',
             title: 'Delete Current Gallery',
             subtitle: '⚠️ Permanently delete the currently loaded gallery folder and all its hard links',
@@ -6079,6 +6100,70 @@
         }
       }
       
+      async function executeRenameCurrentGallery() {
+        if (!currentGallery) {
+          alert('No gallery currently loaded. Please load a gallery first.');
+          return;
+        }
+
+        const galleryPath = currentGallery.replace('/image_data.json', '');
+        const currentName = galleryPath.split('/').pop();
+
+        // Prompt for new name
+        const newName = prompt(`Rename gallery "${currentName}"\n\nEnter new name:`, currentName);
+
+        if (!newName) {
+          return; // User cancelled
+        }
+
+        if (newName === currentName) {
+          alert('New name is the same as current name. No changes made.');
+          return;
+        }
+
+        // Validate new name
+        if (newName.includes('/') || newName.includes('\\') || newName.includes('..')) {
+          alert('❌ Invalid name: Cannot contain path separators (/ or \\) or ".."');
+          return;
+        }
+
+        if (newName.length > 100) {
+          alert('❌ Name too long: Maximum 100 characters allowed');
+          return;
+        }
+
+        try {
+          showCommandLoading('Renaming gallery...');
+
+          const response = await fetch(`http://${window.location.hostname}:8002/api/rename-gallery`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              old_path: galleryPath,
+              new_name: newName
+            })
+          });
+
+          if (response.ok) {
+            const result = await response.json();
+            alert(`✅ Gallery renamed successfully!\n\n${result.message}`);
+
+            // Refresh galleries list and redirect to home
+            await loadGalleries(true);  // Force reload after rename
+            showGallerySelectionMessage();
+
+          } else {
+            const errorData = await response.text();
+            alert(`❌ Failed to rename gallery:\n\n${errorData}`);
+          }
+        } catch (error) {
+          console.error('Error in gallery rename process:', error);
+          alert(`❌ Error renaming gallery: ${error.message}`);
+        }
+
+        hideCommandLoading();
+      }
+
       async function executeDeleteCurrentGallery() {
         if (!currentGallery) {
           alert('No gallery currently loaded. Please load a gallery first.');

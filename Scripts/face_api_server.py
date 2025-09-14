@@ -1439,23 +1439,47 @@ class FaceAPIHandler(BaseHTTPRequestHandler):
         """Get camera usage statistics."""
         cursor.execute("""
             SELECT
-                CASE
-                    WHEN camera_make IS NOT NULL AND camera_model IS NOT NULL THEN
-                        CASE
-                            WHEN UPPER(camera_model) LIKE '%' || UPPER(camera_make) || '%'
-                            THEN camera_model  -- Model already contains make
-                            ELSE camera_make || ' ' || camera_model
-                        END
-                    ELSE 'Unknown Camera'
-                END as camera,
+                camera_make,
+                camera_model,
                 COUNT(*) as count
             FROM images
-            GROUP BY camera
+            WHERE camera_make IS NOT NULL AND camera_model IS NOT NULL
+            GROUP BY camera_make, camera_model
             ORDER BY count DESC
-            LIMIT 20
+            LIMIT 50
         """)
-        
-        return [{'camera': row['camera'], 'count': row['count']} for row in cursor.fetchall()]
+
+        # Process results to consolidate camera names
+        camera_counts = {}
+        for row in cursor.fetchall():
+            make = str(row['camera_make']).strip()
+            model = str(row['camera_model']).strip()
+            count = row['count']
+
+            # Create clean camera name with better deduplication logic
+            make_upper = make.upper()
+            model_upper = model.upper()
+
+            # Check for various patterns of duplication
+            if (make_upper in model_upper or
+                make_upper.replace(' ', '') in model_upper.replace(' ', '') or
+                make_upper.replace('CORPORATION', '').strip() in model_upper):
+                # Model already contains make, use model only
+                camera_name = model
+            else:
+                # Combine make and model
+                camera_name = f"{make} {model}"
+
+            # Consolidate counts for the same camera name
+            if camera_name in camera_counts:
+                camera_counts[camera_name] += count
+            else:
+                camera_counts[camera_name] = count
+
+        # Convert back to list and sort by count
+        results = [{'camera': name, 'count': count} for name, count in camera_counts.items()]
+        results.sort(key=lambda x: x['count'], reverse=True)
+        return results[:20]  # Return top 20
     
     def get_lens_stats(self, cursor):
         """Get lens usage statistics."""
@@ -1475,17 +1499,33 @@ class FaceAPIHandler(BaseHTTPRequestHandler):
     def get_focal_length_stats(self, cursor):
         """Get focal length (35mm equivalent) statistics."""
         cursor.execute("""
-            SELECT 
-                COALESCE(focal_length_35mm, 0) as focal_length,
+            SELECT
+                focal_length_35mm,
                 COUNT(*) as count
-            FROM images 
-            WHERE focal_length_35mm IS NOT NULL AND focal_length_35mm > 0
+            FROM images
+            WHERE focal_length_35mm IS NOT NULL AND focal_length_35mm != ''
             GROUP BY focal_length_35mm
             ORDER BY focal_length_35mm ASC
             LIMIT 30
         """)
-        
-        return [{'focal_length': f"{row['focal_length']}mm", 'count': row['count']} for row in cursor.fetchall()]
+
+        results = []
+        for row in cursor.fetchall():
+            focal_str = str(row['focal_length_35mm'])
+            # Extract numeric value from focal length string
+            import re
+            numbers = re.findall(r'\d+\.?\d*', focal_str)
+            if numbers:
+                try:
+                    focal_num = float(numbers[0])
+                    results.append({'focal_length': f"{int(focal_num)}mm", 'count': row['count']})
+                except ValueError:
+                    # If parsing fails, skip this entry
+                    continue
+
+        # Sort by numeric focal length
+        results.sort(key=lambda x: int(x['focal_length'].replace('mm', '')))
+        return results
     
     def get_year_stats(self, cursor):
         """Get yearly statistics."""
@@ -1520,19 +1560,48 @@ class FaceAPIHandler(BaseHTTPRequestHandler):
     
     def get_file_type_stats(self, cursor):
         """Get file type statistics."""
+        # Get all file information
         cursor.execute("""
             SELECT
-                CASE
-                    WHEN file_type = 'video' THEN UPPER(COALESCE(file_format, 'Unknown Video'))
-                    ELSE UPPER(COALESCE(file_format, 'Unknown'))
-                END as type,
-                COUNT(*) as count
+                filename,
+                file_format,
+                file_type
             FROM images
-            GROUP BY type
-            ORDER BY count DESC
+            WHERE file_format IS NOT NULL AND file_format != ''
         """)
-        
-        return [{'type': row['type'], 'count': row['count']} for row in cursor.fetchall()]
+
+        # Process results to properly separate video formats
+        seen_types = {}  # Track types and their counts
+
+        for row in cursor.fetchall():
+            filename = row['filename'] if row['filename'] else ''
+            file_format = str(row['file_format']).upper()
+            file_type = str(row['file_type']) if row['file_type'] else ''
+
+            # For video files, extract extension from filename
+            # For other files, use format as-is
+            if file_type == 'video' and filename:
+                # Extract file extension from filename
+                if '.' in filename:
+                    extension = filename.rsplit('.', 1)[-1].upper()
+                    type_name = extension
+                else:
+                    type_name = 'VIDEO'
+            else:
+                type_name = file_format
+
+            # Aggregate counts for same type
+            if type_name in seen_types:
+                seen_types[type_name] += 1
+            else:
+                seen_types[type_name] = 1
+
+        # Convert to list format
+        results = [{'type': t, 'count': c} for t, c in seen_types.items()]
+
+        # Sort by count descending
+        results.sort(key=lambda x: x['count'], reverse=True)
+        return results
     
     def get_status_stats(self):
         """Get pick/reject status statistics from JSON files."""

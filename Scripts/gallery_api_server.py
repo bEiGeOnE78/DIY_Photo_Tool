@@ -162,16 +162,35 @@ class GalleryAPIHandler(BaseAPIHandler):
             elif len(path_parts) >= 2 and path_parts[0] == 'api' and path_parts[1] == 'rebuild-galleries-list':
                 # POST /api/rebuild-galleries-list
                 success, message = self.rebuild_galleries_list()
-                
+
                 if success:
                     self.send_response(200)
                     self.send_cors_headers()
                     self.send_json_response({'success': True, 'message': message})
                 else:
                     self.send_error(400, message)
-            
-            # Add other POST endpoints here (generate-raw-proxy, create-gallery, etc.)
-            # ... (I'll continue with the implementation in the next part)
+
+            elif len(path_parts) >= 2 and path_parts[0] == 'api' and path_parts[1] == 'rename-gallery':
+                # POST /api/rename-gallery
+                content_length = int(self.headers['Content-Length'])
+                post_data = self.rfile.read(content_length)
+                data = json.loads(post_data.decode('utf-8'))
+
+                old_path = data.get('old_path', '').strip()
+                new_name = data.get('new_name', '').strip()
+
+                if not old_path or not new_name:
+                    self.send_error(400, "Missing old_path or new_name")
+                    return
+
+                success, message = self.rename_gallery(old_path, new_name)
+
+                if success:
+                    self.send_response(200)
+                    self.send_cors_headers()
+                    self.send_json_response({'success': True, 'message': message})
+                else:
+                    self.send_error(400, message)
             
             else:
                 self.send_error(404, "API endpoint not found")
@@ -290,7 +309,91 @@ class GalleryAPIHandler(BaseAPIHandler):
         except Exception as e:
             self.broadcast_progress(f"❌ Error running galleries list rebuild: {e}", "error")
             return False, f"Error running galleries list rebuild: {str(e)}"
-    
+
+    def rename_gallery(self, old_path, new_name):
+        """Safely rename gallery with security validation."""
+        try:
+            # Security validation: ensure path is within Hard Link Galleries directory
+            old_path = old_path.strip()
+            new_name = new_name.strip()
+
+            # Validate new name (no path separators, reasonable length)
+            if not new_name or '/' in new_name or '\\' in new_name or '..' in new_name:
+                error_msg = "Invalid gallery name: must not contain path separators or be empty"
+                self.broadcast_progress(f"❌ {error_msg}", "error")
+                return False, error_msg
+
+            if len(new_name) > 100:
+                error_msg = "Gallery name too long (max 100 characters)"
+                self.broadcast_progress(f"❌ {error_msg}", "error")
+                return False, error_msg
+
+            # Get absolute paths for security comparison
+            current_dir = Path.cwd()
+            if current_dir.name == "Scripts":
+                base_dir = current_dir.parent
+            else:
+                base_dir = current_dir
+
+            # Expected gallery parent directory
+            hardlinks_dir = base_dir / "Hard Link Galleries"
+
+            # Convert to absolute paths
+            old_abs_path = Path(old_path).resolve()
+            hardlinks_abs_path = hardlinks_dir.resolve()
+
+            # Security check: old gallery must be within Hard Link Galleries directory
+            if not str(old_abs_path).startswith(str(hardlinks_abs_path)):
+                error_msg = f"Security violation: Gallery path must be within Hard Link Galleries directory"
+                self.broadcast_progress(f"❌ {error_msg}", "error")
+                return False, error_msg
+
+            # Check if old gallery exists
+            if not old_abs_path.exists():
+                error_msg = f"Gallery not found: {old_path}"
+                self.broadcast_progress(f"❌ {error_msg}", "error")
+                return False, error_msg
+
+            # Check if it's actually a directory
+            if not old_abs_path.is_dir():
+                error_msg = f"Path is not a directory: {old_path}"
+                self.broadcast_progress(f"❌ {error_msg}", "error")
+                return False, error_msg
+
+            # Create new path (same parent directory, new name)
+            new_abs_path = old_abs_path.parent / new_name
+
+            # Check if new name already exists
+            if new_abs_path.exists():
+                error_msg = f"Gallery name already exists: {new_name}"
+                self.broadcast_progress(f"❌ {error_msg}", "error")
+                return False, error_msg
+
+            old_name = old_abs_path.name
+            self.broadcast_progress(f"📝 Renaming gallery: {old_name} → {new_name}", "info")
+
+            # Perform the rename
+            old_abs_path.rename(new_abs_path)
+
+            self.broadcast_progress(f"✅ Gallery renamed successfully: {old_name} → {new_name}", "success")
+
+            # Automatically rebuild galleries list after rename
+            rebuild_success, rebuild_message = self.rebuild_galleries_list()
+            if rebuild_success:
+                self.broadcast_progress("✅ Galleries list updated after rename", "success")
+                return True, f"Gallery '{old_name}' renamed to '{new_name}' successfully and galleries list updated"
+            else:
+                return True, f"Gallery '{old_name}' renamed to '{new_name}' successfully, but galleries list update failed: {rebuild_message}"
+
+        except PermissionError as e:
+            error_msg = f"Permission denied: {str(e)}"
+            self.broadcast_progress(f"❌ {error_msg}", "error")
+            return False, error_msg
+        except Exception as e:
+            error_msg = f"Error renaming gallery: {str(e)}"
+            self.broadcast_progress(f"❌ {error_msg}", "error")
+            return False, error_msg
+
     # Placeholder methods - these would need to be implemented with the full functionality
     def get_comprehensive_stats(self):
         """Get comprehensive database statistics."""
