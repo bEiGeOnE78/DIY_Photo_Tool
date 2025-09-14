@@ -192,9 +192,9 @@ def convert_raw_to_adjacent_jpg(source_path, image_id=None, camera_standard=None
         # Order: Camera Standard -> Exposure -> Film Simulation
         cmd = ['rawtherapee-cli']
         
-        # Specify output directory (same as source)
+        # Specify output directory (RAW Proxies folder)
         source_path_obj = Path(source_path)
-        cmd.extend(['-o', str(source_path_obj.parent)])
+        cmd.extend(['-o', str(proxy_dir)])
 
         # Add presets in order: Camera Standard -> Exposure -> Style
         if camera_path:

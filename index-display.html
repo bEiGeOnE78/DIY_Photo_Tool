@@ -4466,9 +4466,16 @@
         });
       }
       
-      async function loadGalleries() {
-        // Only load galleries once
-        if (galleriesListLoaded && galleries.length > 0) {
+      async function loadGalleries(forceReload = false) {
+        // Force reload if requested
+        if (forceReload) {
+          galleriesListLoaded = false;
+          galleryCacheBuilt = false;
+          galleryCache = null;
+        }
+
+        // Only load galleries once (unless forcing reload)
+        if (!forceReload && galleriesListLoaded && galleries.length > 0) {
           return;
         }
         
@@ -6111,7 +6118,7 @@
             alert(`✅ Gallery deleted successfully!\n\n${result.message}`);
             
             // Refresh galleries list and redirect to home
-            await loadGalleries();
+            await loadGalleries(true);  // Force reload after deletion
             showGallerySelectionMessage();
             
           } else {
@@ -6293,7 +6300,7 @@
           closeCommandPalette();
           
           // Refresh galleries list
-          await loadGalleries();
+          await loadGalleries(true);  // Force reload after creation
           // Refresh gallery selector UI
           renderGalleries();
           alert(`Gallery "${result.gallery_name}" created successfully!`);
@@ -6325,7 +6332,7 @@
           closeCommandPalette();
           
           if (response.ok && result.success) {
-            await loadGalleries();
+            await loadGalleries(true);  // Force reload after creation
             renderGalleries();
             alert(`Gallery "${result.gallery_name}" created successfully!`);
           } else {
@@ -6360,7 +6367,7 @@
           closeCommandPalette();
           
           if (response.ok && result.success) {
-            await loadGalleries();
+            await loadGalleries(true);  // Force reload after creation
             alert(`Gallery "${result.gallery_name}" created successfully!`);
           } else {
             alert(`Failed to create gallery: ${result.message || 'Unknown error'}`);
@@ -6637,17 +6644,22 @@
         // Create selection message
         const message = `
           <div style="
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            height: 60vh;
-            width: 100%;
+            background: #181818;
             padding: 40px;
             text-align: center;
             color: #ccc;
             font-family: system-ui, -apple-system, sans-serif;
             box-sizing: border-box;
+            z-index: 150;
           ">
             <div style="
               font-size: 48px;

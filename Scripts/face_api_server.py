@@ -1438,15 +1438,19 @@ class FaceAPIHandler(BaseHTTPRequestHandler):
     def get_camera_stats(self, cursor):
         """Get camera usage statistics."""
         cursor.execute("""
-            SELECT 
-                CASE 
-                    WHEN camera_make IS NOT NULL AND camera_model IS NOT NULL 
-                    THEN camera_make || ' ' || camera_model
+            SELECT
+                CASE
+                    WHEN camera_make IS NOT NULL AND camera_model IS NOT NULL THEN
+                        CASE
+                            WHEN UPPER(camera_model) LIKE '%' || UPPER(camera_make) || '%'
+                            THEN camera_model  -- Model already contains make
+                            ELSE camera_make || ' ' || camera_model
+                        END
                     ELSE 'Unknown Camera'
                 END as camera,
                 COUNT(*) as count
-            FROM images 
-            GROUP BY camera_make, camera_model
+            FROM images
+            GROUP BY camera
             ORDER BY count DESC
             LIMIT 20
         """)
@@ -1486,12 +1490,12 @@ class FaceAPIHandler(BaseHTTPRequestHandler):
     def get_year_stats(self, cursor):
         """Get yearly statistics."""
         cursor.execute("""
-            SELECT 
-                strftime('%Y', date_taken) as year,
+            SELECT
+                strftime('%Y', COALESCE(date_original, date_taken)) as year,
                 COUNT(*) as count
-            FROM images 
-            WHERE date_taken IS NOT NULL
-            GROUP BY strftime('%Y', date_taken)
+            FROM images
+            WHERE COALESCE(date_original, date_taken) IS NOT NULL
+            GROUP BY strftime('%Y', COALESCE(date_original, date_taken))
             ORDER BY year DESC
         """)
         
@@ -1517,11 +1521,14 @@ class FaceAPIHandler(BaseHTTPRequestHandler):
     def get_file_type_stats(self, cursor):
         """Get file type statistics."""
         cursor.execute("""
-            SELECT 
-                UPPER(COALESCE(file_format, 'Unknown')) as type,
+            SELECT
+                CASE
+                    WHEN file_type = 'video' THEN UPPER(COALESCE(file_format, 'Unknown Video'))
+                    ELSE UPPER(COALESCE(file_format, 'Unknown'))
+                END as type,
                 COUNT(*) as count
-            FROM images 
-            GROUP BY UPPER(file_format)
+            FROM images
+            GROUP BY type
             ORDER BY count DESC
         """)
         
