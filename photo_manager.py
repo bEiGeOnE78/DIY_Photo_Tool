@@ -32,7 +32,7 @@ class PhotoManager:
             "10. 🚀 Process New Images (extract metadata + thumbnails + proxies + faces)"
         )
         print("11. 🌐 Start Gallery Server (web viewer)")
-        print("12. 🛑 Stop Gallery Server (stop both servers)")
+        print("12. 🛑 Stop Gallery Server (stop all servers)")
         print("13. 🔄 Restart Gallery Server (rebuild + restart)")
         print("14. 🔨 Quick Rebuild Galleries List (no restart)")
         print("15. 👥 Face Recognition (detect/label people)")
@@ -444,61 +444,51 @@ class PhotoManager:
         print("   • Start gallery server to view results (option 8)")
 
     def start_gallery_server(self):
-        """Start both gallery web server and face API server in background."""
+        """Start all three servers: gallery web server, face API server, and gallery API server."""
         print("\n🌐 START GALLERY SERVER")
         print("-" * 40)
         print("This will start:")
-        print("  • Face API Server (background)")
-        print("  • Gallery Web Server (background)")
+        print("  • Face API Server (port 8001) - Face recognition")
+        print("  • Gallery API Server (port 8002) - Gallery management & image processing")
+        print("  • Gallery Web Server (port 8000) - Web interface")
         print("You can then open http://localhost:8000 in your browser.")
-        print("Face detection will be available in the gallery.")
+        print("Full functionality will be available with all three servers.")
 
         input("\nPress Enter to start servers...")
 
         try:
-            # Start Face API Server in background
-            print("🚀 Starting Face API Server...")
-            face_api_process = subprocess.Popen(
-                [sys.executable, str(self.base_dir / "Scripts" / "face_api_server.py")],
+            # Use the updated startup script that handles all three servers
+            print("🚀 Starting all servers...")
+            server_process = subprocess.Popen(
+                ["bash", str(self.base_dir / "Scripts" / "start_local_servers.sh")],
                 cwd=str(self.base_dir),
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
             )
 
-            # Give face API server time to start
             import time
+            time.sleep(3)  # Give servers time to start
 
-            time.sleep(2)
-            print("✅ Face API Server started (PID: {})".format(face_api_process.pid))
-
-            # Start Gallery Server in background
-            print("🚀 Starting Gallery Web Server...")
-            gallery_process = subprocess.Popen(
-                ["bash", str(self.base_dir / "Scripts" / "start_gallery_server.sh")],
-                cwd=str(self.base_dir),
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-
-            time.sleep(2)  # Give it time to start
-            print("✅ Gallery Web Server started (PID: {})".format(gallery_process.pid))
-
-            print("\n🌐 Servers are now running!")
+            print("\n🌐 All servers are now running!")
             print("📱 Open: http://localhost:8000/index-display.html")
-            print("🔧 Use option 7 to stop servers or option 8 to restart")
-            print("👈 Returning to main menu...")
+            print("🔧 Face API: http://localhost:8001")
+            print("🗂️ Gallery API: http://localhost:8002")
+            print("🛑 Use option 12 to stop servers or option 13 to restart")
+            print("👈 Press Ctrl+C in the server terminal to stop, then return here...")
+
+            # Wait for user to acknowledge
+            input("\nPress Enter when you're done using the servers...")
 
         except Exception as e:
             print(f"❌ Error starting servers: {e}")
-            print("💡 Try stopping servers first (option 7) then restart")
+            print("💡 Try stopping servers first (option 12) then restart")
 
     def stop_gallery_server(self):
-        """Stop both gallery and face API servers."""
-        print("\n🛑 STOP GALLERY SERVER")
+        """Stop all three servers: gallery, face API, and gallery API servers."""
+        print("\n🛑 STOP ALL SERVERS")
         print("-" * 40)
         print("This will stop:")
-        print("  • Face API Server")
-        print("  • Gallery Web Server")
+        print("  • Face API Server (port 8001)")
+        print("  • Gallery API Server (port 8002)")
+        print("  • Gallery Web Server (port 8000)")
         print("  • Any related HTTP servers")
 
         try:
@@ -509,22 +499,32 @@ class PhotoManager:
                 ["pkill", "-f", "Scripts/face_api_server.py"], capture_output=True
             )
 
-            # Stop gallery server
+            # Stop gallery API server
             result2 = subprocess.run(
+                ["pkill", "-f", "Scripts/gallery_api_server.py"], capture_output=True
+            )
+
+            # Stop gallery server startup script
+            result3 = subprocess.run(
                 ["pkill", "-f", "Scripts/start_gallery_server.sh"], capture_output=True
             )
 
+            # Stop local servers script
+            result4 = subprocess.run(
+                ["pkill", "-f", "Scripts/start_local_servers.sh"], capture_output=True
+            )
+
             # Stop any Python HTTP servers (from start_gallery_server.sh)
-            result3 = subprocess.run(
+            result5 = subprocess.run(
                 ["pkill", "-f", "python.*http.server"], capture_output=True
             )
 
-            # More aggressive kill for processes using ports 8000 and 8001
+            # More aggressive kill for processes using ports 8000, 8001, and 8002
             import time
 
             time.sleep(1)  # Give processes time to die gracefully
 
-            # Check and kill anything still using port 8000
+            # Check and kill anything still using port 8000 (Gallery Web Server)
             try:
                 lsof_result = subprocess.run(
                     ["lsof", "-t", "-i:8000"], capture_output=True, text=True
@@ -537,7 +537,7 @@ class PhotoManager:
             except:
                 pass
 
-            # Check and kill anything still using port 8001
+            # Check and kill anything still using port 8001 (Face API Server)
             try:
                 lsof_result = subprocess.run(
                     ["lsof", "-t", "-i:8001"], capture_output=True, text=True
@@ -547,6 +547,19 @@ class PhotoManager:
                     for pid in pids:
                         subprocess.run(["kill", pid], capture_output=True)
                         print(f"✅ Killed process {pid} using port 8001")
+            except:
+                pass
+
+            # Check and kill anything still using port 8002 (Gallery API Server)
+            try:
+                lsof_result = subprocess.run(
+                    ["lsof", "-t", "-i:8002"], capture_output=True, text=True
+                )
+                if lsof_result.stdout.strip():
+                    pids = lsof_result.stdout.strip().split("\n")
+                    for pid in pids:
+                        subprocess.run(["kill", pid], capture_output=True)
+                        print(f"✅ Killed process {pid} using port 8002")
             except:
                 pass
 
@@ -574,55 +587,21 @@ class PhotoManager:
             print("   pkill -f 'python.*http.server'")
 
     def restart_gallery_server(self):
-        """Restart servers with gallery list rebuild."""
-        print("\n🔄 RESTART GALLERY SERVER")
+        """Restart all servers with gallery list rebuild."""
+        print("\n🔄 RESTART ALL SERVERS")
         print("-" * 40)
         print("This will:")
         print("  • Stop any running servers")
         print("  • Rebuild main gallery list (galleries.json)")
-        print("  • Restart both Face API and Gallery servers")
+        print("  • Restart Face API, Gallery API, and Gallery Web servers")
         print("  • Refresh available galleries in web interface")
 
         input("\nPress Enter to restart servers...")
 
         try:
-            # Stop any running servers
+            # Stop any running servers using the stop function
             print("🛑 Stopping any running servers...")
-            subprocess.run(
-                ["pkill", "-f", "Scripts/face_api_server.py"], capture_output=True
-            )
-            subprocess.run(
-                ["pkill", "-f", "Scripts/start_gallery_server.sh"], capture_output=True
-            )
-            subprocess.run(["pkill", "-f", "python.*http.server"], capture_output=True)
-
-            # Give processes time to die gracefully
-            import time
-
-            time.sleep(1)
-
-            # More aggressive kill for processes using ports 8000 and 8001
-            try:
-                lsof_result = subprocess.run(
-                    ["lsof", "-t", "-i:8000"], capture_output=True, text=True
-                )
-                if lsof_result.stdout.strip():
-                    pids = lsof_result.stdout.strip().split("\n")
-                    for pid in pids:
-                        subprocess.run(["kill", pid], capture_output=True)
-            except:
-                pass
-
-            try:
-                lsof_result = subprocess.run(
-                    ["lsof", "-t", "-i:8001"], capture_output=True, text=True
-                )
-                if lsof_result.stdout.strip():
-                    pids = lsof_result.stdout.strip().split("\n")
-                    for pid in pids:
-                        subprocess.run(["kill", pid], capture_output=True)
-            except:
-                pass
+            self.stop_gallery_server()
 
             print("✅ Stopped existing servers")
 
