@@ -1158,8 +1158,14 @@
       const bigvideo = document.getElementById("bigvideo");
       const singleview = document.getElementById("singleview");
       
+      // Performance-optimized debug logging system
+      const DEBUG_ENABLED = false; // Set to true for debugging, false for production
+      const debugLog = DEBUG_ENABLED ? console.log.bind(console) : () => {};
+      const debugWarn = DEBUG_ENABLED ? console.warn.bind(console) : () => {};
+      const debugError = DEBUG_ENABLED ? console.error.bind(console) : () => {};
+
       // Debug video element at page load
-      console.log('🎬 Video element at page load:', {
+      debugLog('🎬 Video element at page load:', {
         bigvideo: bigvideo,
         exists: !!bigvideo,
         inDOM: bigvideo && bigvideo.parentElement !== null,
@@ -1449,7 +1455,7 @@
       }
 
       function showThumbs() {
-        console.log(`🔄 Switching to thumbnail view from mode: ${mode}, current index: ${current}`);
+        debugLog(`🔄 Switching to thumbnail view from mode: ${mode}, current index: ${current}`);
         mode = "thumbs";
 
         // Use z-index instead of display changes for instant switching
@@ -1484,12 +1490,12 @@
         updateTouchToolbar();
         
         // Sync orange selection with current image from full screen navigation
-        console.log(`🔄 Syncing thumbnail selection to current index: ${current}`);
+        debugLog(`🔄 Syncing thumbnail selection to current index: ${current}`);
         selectedThumbnails.clear();
         selectedThumbnails.add(current);
 
         updateSelectionDisplay();
-        console.log(`🔄 Selected thumbnails after sync:`, Array.from(selectedThumbnails));
+        debugLog(`🔄 Selected thumbnails after sync:`, Array.from(selectedThumbnails));
         updatePickClasses();
         updateStatusIndicator();
         loadSidebar(current).catch(console.error);
@@ -1497,9 +1503,9 @@
       async function showSingle(fitOrZoom) {
         mode = fitOrZoom;
 
-        console.log(`🎯 showSingle called with mode: ${fitOrZoom}, current index: ${current}`);
+        debugLog(`🎯 showSingle called with mode: ${fitOrZoom}, current index: ${current}`);
         const currentMeta = images[current];
-        console.log(`🎯 Current image metadata:`, {
+        debugLog(`🎯 Current image metadata:`, {
           imageId: currentMeta?._imageId,
           sourcefile: currentMeta?.SourceFile,
           originalPath: currentMeta?._originalPath,
@@ -1521,11 +1527,11 @@
           await loadImage(current);
         } else {
           // Always refresh adjacent images to ensure proxy state is current
-          console.log('🔄 Refreshing adjacent images for current proxy state');
+          debugLog('🔄 Refreshing adjacent images for current proxy state');
 
           // Force clear proxy state cache to ensure fresh database lookup
           if (currentMeta?._imageId) {
-            console.log(`🧹 Clearing proxy state cache for image ${currentMeta._imageId}`);
+            debugLog(`🧹 Clearing proxy state cache for image ${currentMeta._imageId}`);
             clearProxyStateCache(currentMeta._imageId);
           }
 
@@ -1612,7 +1618,7 @@
         if (meta._imageId && isRawFile) {
           const proxyState = await getCurrentProxyState(meta._imageId);
 
-          console.log(`🔍 getDisplaySource for RAW file ${meta._imageId}:`, {
+          debugLog(`🔍 getDisplaySource for RAW file ${meta._imageId}:`, {
             proxyState: proxyState,
             originalPath: meta._originalPath,
             cleanSrc: cleanSrc
@@ -1622,7 +1628,7 @@
             // Check for custom generated proxy
             if (proxyState.raw_proxy_type === 'custom_generated' && proxyState.has_custom_proxy) {
               const proxyPath = `RAW Proxies/${meta._imageId}.jpg`;
-              console.log(`✅ Using custom proxy: ${proxyPath}`);
+              debugLog(`✅ Using custom proxy: ${proxyPath}`);
               return forceTimestamp ? proxyPath + '?t=' + Date.now() : proxyPath;
             }
 
@@ -1631,13 +1637,13 @@
               // Use original path to find adjacent JPEG, not gallery hardlink path
               const originalPath = meta._originalPath.replace(/^\.\//, "");
               const adjacentJpeg = originalPath.replace(/\.(nef|cr2|cr3|arw|dng|orf|rw2|pef|srw|raf)$/i, '.jpg');
-              console.log(`✅ Using original JPEG: ${adjacentJpeg}`);
+              debugLog(`✅ Using original JPEG: ${adjacentJpeg}`);
               return forceTimestamp ? adjacentJpeg + '?t=' + Date.now() : adjacentJpeg;
             }
           }
 
           // Fallback to original RAW file if no proxy state or unsupported type
-          console.log(`⚠️ Fallback to RAW file: ${cleanSrc}`);
+          debugLog(`⚠️ Fallback to RAW file: ${cleanSrc}`);
           return forceTimestamp ? cleanSrc + '?t=' + Date.now() : cleanSrc;
         }
 
@@ -1718,7 +1724,7 @@
         const isPicked = picks.has(imageId);
         const isRejected = rejects.has(imageId);
 
-        console.log('🎯 loadImage called for:', {
+        debugLog('🎯 loadImage called for:', {
           cleanOriginalSrc: cleanOriginalSrc,
           displaySrc: displaySrc,
           isVideo: isVideoFile(cleanOriginalSrc),
@@ -1730,7 +1736,7 @@
           clearAdjacentElements();
 
           // Debug logging for video loading
-          console.log('🎬 Loading video:', {
+          debugLog('🎬 Loading video:', {
             cleanOriginalSrc: cleanOriginalSrc,
             displaySrc: displaySrc,
             imageId: imageId,
@@ -1742,7 +1748,7 @@
           
           // Use fresh DOM lookup instead of potentially detached cached variable
           const videoElement = document.getElementById('bigvideo');
-          console.log('🎬 Fresh video element check:', {
+          debugLog('🎬 Fresh video element check:', {
             element: videoElement,
             exists: !!videoElement,
             inDOM: videoElement && videoElement.parentElement !== null,
@@ -1750,31 +1756,31 @@
           });
           
           if (!videoElement) {
-            console.error('🎬 ERROR: Video element not found in DOM!');
+            debugError('🎬 ERROR: Video element not found in DOM!');
             return;
           }
           
           if (!videoElement.parentElement) {
-            console.error('🎬 ERROR: Video element exists but not attached to DOM!');
+            debugError('🎬 ERROR: Video element exists but not attached to DOM!');
             return;
           }
           
           // Add event listeners for debugging video loading
-          videoElement.addEventListener('loadstart', () => console.log('🎬 Video loadstart event'), { once: true });
-          videoElement.addEventListener('loadedmetadata', () => console.log('🎬 Video loadedmetadata event'), { once: true });
-          videoElement.addEventListener('canplay', () => console.log('🎬 Video canplay event'), { once: true });
-          videoElement.addEventListener('error', (e) => console.error('🎬 Video error:', e, videoElement.error), { once: true });
+          videoElement.addEventListener('loadstart', () => debugLog('🎬 Video loadstart event'), { once: true });
+          videoElement.addEventListener('loadedmetadata', () => debugLog('🎬 Video loadedmetadata event'), { once: true });
+          videoElement.addEventListener('canplay', () => debugLog('🎬 Video canplay event'), { once: true });
+          videoElement.addEventListener('error', (e) => debugError('🎬 Video error:', e, videoElement.error), { once: true });
           
           // Add simple interaction debugging
-          videoElement.addEventListener('click', () => console.log('🎬 Video controls clicked'));
+          videoElement.addEventListener('click', () => debugLog('🎬 Video controls clicked'));
           
           // Show video, hide image
-          console.log('🎬 Setting video src to:', displaySrc);
-          console.log('🎬 Current base URL:', window.location.origin);
+          debugLog('🎬 Setting video src to:', displaySrc);
+          debugLog('🎬 Current base URL:', window.location.origin);
           
           // For videos, ensure we use absolute URL to prevent URI issues
           const absoluteVideoSrc = displaySrc.startsWith('http') ? displaySrc : `http://localhost:8000/${displaySrc}`;
-          console.log('🎬 Absolute video URL:', absoluteVideoSrc);
+          debugLog('🎬 Absolute video URL:', absoluteVideoSrc);
           
           // Ensure proper display switching for videos
           videoElement.src = absoluteVideoSrc;
@@ -1787,33 +1793,33 @@
             currentImageElement.style.display = "none";
           }
           
-          console.log('🎬 Display set: video=block, image=none');
+          debugLog('🎬 Display set: video=block, image=none');
           
           // Ensure video is unmuted for autoplay
           videoElement.muted = false;
           videoElement.volume = 1.0; // Set to full volume
           
           // Debug key video properties
-          console.log('🎬 Video loaded:', {
+          debugLog('🎬 Video loaded:', {
             fileName: cleanOriginalSrc.split('/').pop(),
             dimensions: `${videoElement.offsetWidth}x${videoElement.offsetHeight}`,
             muted: videoElement.muted,
             controls: videoElement.controls
           });
           
-          console.log('🎬 Video src after setting:', videoElement.src);
+          debugLog('🎬 Video src after setting:', videoElement.src);
           videoElement.classList.toggle("picked", isPicked);
           videoElement.classList.toggle("rejected", isRejected);
           
           // Auto-play the video immediately after setting source
-          console.log('🎬 Starting immediate auto-play...');
+          debugLog('🎬 Starting immediate auto-play...');
           setTimeout(() => {
             // For Firefox/Zen browser compatibility, try unmuting again
             videoElement.muted = false;
             videoElement.volume = 1.0;
             
             videoElement.play().then(() => {
-              console.log('🎬 Immediate auto-play successful!');
+              debugLog('🎬 Immediate auto-play successful!');
               // Force unmute after successful play
               setTimeout(() => {
                 videoElement.muted = false;
@@ -1973,7 +1979,7 @@
         /**Create DOM elements for current image and 2 adjacent images on each side*/
         if (!images || images.length === 0) return;
 
-        console.log(`🎯 Creating adjacent images for center index ${centerIdx} (mode: ${mode})`);
+        debugLog(`🎯 Creating adjacent images for center index ${centerIdx} (mode: ${mode})`);
 
         // Clear existing adjacent elements
         clearAdjacentElements();
@@ -2015,7 +2021,7 @@
           const isRawFile = cleanOriginalSrc.match(/\.(nef|cr2|cr3|arw|dng|orf|rw2|pef|srw|raf)$/i) ||
                            (meta._originalPath && meta._originalPath.match(/\.(nef|cr2|cr3|arw|dng|orf|rw2|pef|srw|raf)$/i));
           if (position === 'current' && isRawFile) {
-            console.log(`🔍 RAW file display source for current image:`, {
+            debugLog(`🔍 RAW file display source for current image:`, {
               originalSrc: cleanOriginalSrc,
               displaySrc: displaySrc,
               imageId: meta._imageId,
@@ -2025,13 +2031,13 @@
 
             // Additional debug: check what getCurrentProxyState returns at this moment
             getCurrentProxyState(meta._imageId).then(state => {
-              console.log(`🔍 Direct proxy state check for image ${meta._imageId}:`, state);
+              debugLog(`🔍 Direct proxy state check for image ${meta._imageId}:`, state);
             });
           }
 
           if (isVideoFile(cleanOriginalSrc)) {
             // Skip creating adjacent video elements - videos load on demand only
-            console.log(`📹 Skipping adjacent video element for ${position} (index ${idx}) - videos load on demand`);
+            debugLog(`📹 Skipping adjacent video element for ${position} (index ${idx}) - videos load on demand`);
           } else {
             // Create image element
             const img = document.createElement("img");
@@ -2053,7 +2059,7 @@
             adjacentImages[position] = img;
             bigimgWrap.appendChild(img);
 
-            console.log(`🖼️ Created image element for ${position} (index ${idx})`);
+            debugLog(`🖼️ Created image element for ${position} (index ${idx})`);
           }
         }
 
@@ -2194,7 +2200,7 @@
             }, 50);
           } else {
             // Fallback: recreate adjacent elements if instant switch failed
-            console.log(`🔄 Instant switch failed, recreating adjacent elements for index ${newCurrent}`);
+            debugLog(`🔄 Instant switch failed, recreating adjacent elements for index ${newCurrent}`);
             current = newCurrent;
             selectedThumbnails.clear();
             selectedThumbnails.add(current);
@@ -4902,7 +4908,7 @@
           }
         });
         
-        console.log(`📉 Memory management: Unloaded ${toUnload.length} images furthest from viewport`);
+        debugLog(`📉 Memory management: Unloaded ${toUnload.length} images furthest from viewport`);
       }
       
       async function loadThumbnail(cell, idx) {
@@ -4937,7 +4943,7 @@
         cell.dataset.loaded = 'true';
         loadedImages.add(idx);
         
-        console.log(`📸 Loaded thumbnail ${idx} (${loadedImages.size}/${MAX_LOADED_IMAGES})`);
+        debugLog(`📸 Loaded thumbnail ${idx} (${loadedImages.size}/${MAX_LOADED_IMAGES})`);
         
         // Check if we need to unload distant images
         enforceMemoryLimit();
@@ -5096,13 +5102,13 @@
           }
         }
         
-        console.log(`📋 Created preload queue of ${preloadQueue.length} IMAGES ONLY (max ${maxPreloadImages}) starting from index ${startIndex}`);
+        debugLog(`📋 Created preload queue of ${preloadQueue.length} IMAGES ONLY (max ${maxPreloadImages}) starting from index ${startIndex}`);
       }
       
       async function continuePreloading() {
         /**Continue preloading the next image in queue - IMAGES ONLY*/
         if (!preloadingActive || currentPreloadIndex >= preloadQueue.length) {
-          console.log(`✅ Background preloading completed (${preloadedImages.size} images cached)`);
+          debugLog(`✅ Background preloading completed (${preloadedImages.size} images cached)`);
           preloadingActive = false;
           return;
         }
@@ -5138,7 +5144,7 @@
           // Check if image was loaded from cache or server
           setTimeout(() => {
             const cacheStatus = checkImageCacheStatus(displaySrc);
-            console.log(`📸 Preloaded image ${currentPreloadIndex + 1}/${preloadQueue.length} (index ${imageIndex + 1}) - ${cacheStatus.toUpperCase()}`);
+            debugLog(`📸 Preloaded image ${currentPreloadIndex + 1}/${preloadQueue.length} (index ${imageIndex + 1}) - ${cacheStatus.toUpperCase()}`);
           }, 10);
           
           currentPreloadIndex++;
