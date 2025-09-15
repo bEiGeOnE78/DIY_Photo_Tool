@@ -1153,6 +1153,51 @@
         adjacentVideos = {
           prev2: null, prev1: null, current: null, next1: null, next2: null
         };
+
+      // Phase 3: DOM Reference Caching System
+      // Eliminates expensive querySelector calls for thumbnail operations
+      class ThumbnailDOMCache {
+        constructor() {
+          this.cells = new Map();
+          this.images = new Map();
+        }
+
+        set(idx, cell, img) {
+          this.cells.set(idx, cell);
+          this.images.set(idx, img);
+        }
+
+        getCell(idx) {
+          return this.cells.get(idx);
+        }
+
+        getImage(idx) {
+          return this.images.get(idx);
+        }
+
+        clear() {
+          this.cells.clear();
+          this.images.clear();
+        }
+
+        has(idx) {
+          return this.cells.has(idx);
+        }
+
+        size() {
+          return this.cells.size;
+        }
+
+        getBoth(idx) {
+          return {
+            cell: this.cells.get(idx),
+            img: this.images.get(idx)
+          };
+        }
+      }
+
+      const thumbnailCache = new ThumbnailDOMCache();
+
       const thumbgrid = document.getElementById("thumbgrid");
       const bigimg = document.getElementById("bigimg");
       const bigvideo = document.getElementById("bigvideo");
@@ -1546,7 +1591,7 @@
         updatePickClasses();
       }
       function scrollThumbIntoView(idx) {
-        const el = document.querySelector(`.thumb-cell[data-idx='${idx}']`);
+        const el = thumbnailCache.getCell(idx);
         if (el) el.scrollIntoView({ block: "center", inline: "center" });
       }
 
@@ -1657,10 +1702,10 @@
         const imageIndex = images.findIndex(img => img._imageId === imageId);
         if (imageIndex === -1) return;
 
-        const cell = document.querySelector(`.thumb-cell[data-idx='${imageIndex}']`);
+        const cell = thumbnailCache.getCell(imageIndex);
         if (!cell) return;
 
-        const img = cell.querySelector('img');
+        const img = thumbnailCache.getImage(imageIndex);
         if (!img) return;
 
         // Get updated thumbnail source and refresh
@@ -1709,10 +1754,10 @@
           const meta = images[idx];
           if (!meta) return;
 
-          const cell = document.querySelector(`.thumb-cell[data-idx='${idx}']`);
+          const cell = thumbnailCache.getCell(idx);
           if (!cell) return;
 
-          const img = cell.querySelector('img');
+          const img = thumbnailCache.getImage(idx);
           if (!img) return;
 
           // This will now use cached proxy states for RAW images
@@ -5029,7 +5074,7 @@
         const toUnload = loadedWithDistances.slice(0, loadedImages.size - MAX_LOADED_IMAGES + 50); // Unload 50 extra for buffer
         
         toUnload.forEach(item => {
-          const cell = document.querySelector(`.thumb-cell[data-idx='${item.idx}']`);
+          const cell = thumbnailCache.getCell(item.idx);
           if (cell && !cell.classList.contains('selected')) { // Don't unload selected image
             unloadThumbnail(cell, item.idx);
           }
@@ -5047,7 +5092,7 @@
         const cleanSrc = src.replace(/^\.\//, "");
         
         // Check if already has content loaded
-        const img = cell.querySelector('img');
+        const img = thumbnailCache.getImage(idx);
         const alreadyLoaded = (img && img.src);
         
         if (alreadyLoaded && loadedImages.has(idx)) {
@@ -5086,7 +5131,7 @@
           loadTimeouts.delete(idx);
         }
         
-        const img = cell.querySelector('img');
+        const img = thumbnailCache.getImage(idx);
         
         if (img && img.src) {
           img.src = '';
@@ -5119,8 +5164,9 @@
         loadedImages.clear();
         viewportCenter = 0;
 
-        // Clear DOM
+        // Clear DOM and cache
         thumbgrid.innerHTML = "";
+        thumbnailCache.clear();
 
         // Create all thumbnail cells first
         const allIndices = [];
@@ -5144,6 +5190,9 @@
           cell.dataset.loaded = 'true';
           loadedImages.add(i);
           thumbgrid.appendChild(cell);
+
+          // Cache DOM references for fast access
+          thumbnailCache.set(i, cell, img);
 
           allIndices.push(i);
         }

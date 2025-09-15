@@ -126,15 +126,6 @@ class FaceAPIHandler(BaseHTTPRequestHandler):
                 else:
                     self.send_error(404, "Thumbnail not found")
 
-            elif len(path_parts) >= 3 and path_parts[0] == 'api' and path_parts[1] == 'batch-proxy-states':
-                # POST /api/batch-proxy-states
-                content_length = int(self.headers.get('Content-Length', 0))
-                request_data = json.loads(self.rfile.read(content_length))
-                image_ids = request_data.get('imageIds', [])
-                batch_states = self.get_batch_proxy_states(image_ids)
-                self.send_response(200)
-                self.send_cors_headers()
-                self.send_json_response(batch_states)
 
             elif len(path_parts) >= 2 and path_parts[0] == 'api' and path_parts[1] == 'load-picks':
                 # GET /api/load-picks
@@ -469,7 +460,17 @@ class FaceAPIHandler(BaseHTTPRequestHandler):
                     'success': True, 
                     'message': f'Started processing new images from {directory} in background. Check the console for progress updates.'
                 })
-            
+
+            elif len(path_parts) >= 2 and path_parts[0] == 'api' and path_parts[1] == 'batch-proxy-states':
+                # POST /api/batch-proxy-states
+                content_length = int(self.headers.get('Content-Length', 0))
+                request_data = json.loads(self.rfile.read(content_length))
+                image_ids = request_data.get('imageIds', [])
+                batch_states = self.get_batch_proxy_states(image_ids)
+                self.send_response(200)
+                self.send_cors_headers()
+                self.send_json_response(batch_states)
+
             else:
                 self.send_error(404, "API endpoint not found")
                 
