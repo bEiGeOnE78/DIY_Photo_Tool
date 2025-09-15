@@ -1588,6 +1588,69 @@
         }
       }
 
+      async function getBatchProxyStates(imageIds) {
+        /**Get proxy states for multiple images in a single API call - HIGH PERFORMANCE*/
+        if (!imageIds || imageIds.length === 0) {
+          return {};
+        }
+
+        // Filter out IDs that are already cached
+        const uncachedIds = imageIds.filter(id => !proxyStateCache.has(id));
+
+        if (uncachedIds.length === 0) {
+          // All requested states are already cached
+          const cachedResults = {};
+          imageIds.forEach(id => {
+            if (proxyStateCache.has(id)) {
+              cachedResults[id] = proxyStateCache.get(id);
+            }
+          });
+          debugLog(`📦 All proxy states served from cache: ${imageIds.length} images`);
+          return cachedResults;
+        }
+
+        try {
+          debugLog(`🚀 Batch fetching proxy states for ${uncachedIds.length} images (${imageIds.length - uncachedIds.length} cached)`);
+
+          const response = await fetch(`http://${window.location.hostname}:8001/api/batch-proxy-states`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              imageIds: uncachedIds
+            })
+          });
+
+          if (!response.ok) {
+            debugWarn(`Failed to get batch proxy states: ${response.status}`);
+            return {};
+          }
+
+          const batchResults = await response.json();
+
+          // Cache all the new results
+          Object.entries(batchResults).forEach(([id, state]) => {
+            proxyStateCache.set(parseInt(id), state);
+          });
+
+          // Combine cached and new results
+          const allResults = {};
+          imageIds.forEach(id => {
+            if (proxyStateCache.has(id)) {
+              allResults[id] = proxyStateCache.get(id);
+            }
+          });
+
+          debugLog(`✅ Batch proxy states loaded: ${Object.keys(batchResults).length} new, ${imageIds.length} total`);
+          return allResults;
+
+        } catch (error) {
+          debugError(`Error in batch proxy state fetch:`, error);
+          return {};
+        }
+      }
+
       async function reloadThumbnail(imageId) {
         /**Reload thumbnail for a specific image after proxy change*/
         // Find the thumbnail cell for this image
@@ -1604,6 +1667,65 @@
         const meta = images[imageIndex];
         const thumbnailSrc = await getThumbnailSource(meta, true); // Force timestamp
         img.src = thumbnailSrc;
+      }
+
+      async function batchLoadThumbnailsWithProxyStates(indices) {
+        /**Load thumbnails for multiple images with batched proxy state fetching - HIGH PERFORMANCE*/
+        if (!indices || indices.length === 0) return;
+
+        // Identify RAW images that need proxy state checking
+        const rawImageData = [];
+        const regularImages = [];
+
+        indices.forEach(idx => {
+          const meta = images[idx];
+          if (!meta) return;
+
+          const originalSrc = meta.SourceFile || meta.src || meta.FileName;
+          const cleanSrc = originalSrc.replace(/^\.\//, "");
+
+          // Check if this might be a RAW file (by extension or original path)
+          const isRawByExtension = cleanSrc.match(/\.(nef|cr2|cr3|arw|dng|orf|rw2|pef|srw|raf)$/i);
+          const isRawByOriginalPath = meta._originalPath && meta._originalPath.match(/\.(nef|cr2|cr3|arw|dng|orf|rw2|pef|srw|raf)$/i);
+
+          if (meta._imageId && (isRawByExtension || isRawByOriginalPath)) {
+            rawImageData.push({ idx, meta, imageId: meta._imageId });
+          } else {
+            regularImages.push({ idx, meta });
+          }
+        });
+
+        // Batch fetch proxy states for all RAW images
+        if (rawImageData.length > 0) {
+          const rawImageIds = rawImageData.map(item => item.imageId);
+          debugLog(`🔋 Batch loading ${rawImageData.length} RAW thumbnails and ${regularImages.length} regular thumbnails`);
+
+          await getBatchProxyStates(rawImageIds);
+          // Proxy states are now cached, individual getThumbnailSource calls will be fast
+        }
+
+        // Now load all thumbnails - RAW ones will use cached proxy states
+        const loadPromises = indices.map(async idx => {
+          const meta = images[idx];
+          if (!meta) return;
+
+          const cell = document.querySelector(`.thumb-cell[data-idx='${idx}']`);
+          if (!cell) return;
+
+          const img = cell.querySelector('img');
+          if (!img) return;
+
+          // This will now use cached proxy states for RAW images
+          const thumbnailSrc = await getThumbnailSource(meta);
+          img.src = thumbnailSrc;
+          img.alt = meta.FileName || "";
+
+          cell.dataset.loaded = 'true';
+          loadedImages.add(idx);
+        });
+
+        await Promise.all(loadPromises);
+        debugLog(`✅ Batch thumbnail loading completed: ${indices.length} images`);
       }
 
       async function getDisplaySource(meta, forceTimestamp = false) {
@@ -1682,7 +1804,12 @@
 
         // For RAW files, check proxy state to determine thumbnail source
         try {
-          const proxyState = await getCurrentProxyState(meta._imageId);
+          // Check cache first for better performance (populated by batch operations)
+          let proxyState = proxyStateCache.get(meta._imageId);
+          if (!proxyState) {
+            // Fallback to individual request if not in cache
+            proxyState = await getCurrentProxyState(meta._imageId);
+          }
 
           if (proxyState) {
             // If using custom proxy, generate thumbnail from the proxy image
@@ -4807,7 +4934,7 @@
           
           // Update UI
           renderGalleries(); // Update active state
-          renderThumbnails();
+          await renderThumbnails();
           updateSelectionDisplay();
           
           // Load picks and rejects, then update visual indicators
@@ -4979,7 +5106,7 @@
         // Images that were already loading will complete, images that hadn't started won't start
       }
 
-      function renderThumbnails() {
+      async function renderThumbnails() {
         // Cancel any pending image loads from previous gallery
         const existingImages = thumbgrid.querySelectorAll('img');
         existingImages.forEach(img => {
@@ -4995,9 +5122,8 @@
         // Clear DOM
         thumbgrid.innerHTML = "";
 
-        // Create all thumbnail cells first, then load images in parallel
-        const thumbnailPromises = [];
-
+        // Create all thumbnail cells first
+        const allIndices = [];
         for (let i = 0; i < images.length; i++) {
           const meta = images[i];
           const src = meta.SourceFile || meta.src || meta.FileName;
@@ -5019,24 +5145,19 @@
           loadedImages.add(i);
           thumbgrid.appendChild(cell);
 
-          // Start async thumbnail loading (parallel)
-          const thumbnailPromise = getThumbnailSource(meta).then(thumbnailSrc => {
-            img.src = thumbnailSrc;
-          }).catch(err => {
-            console.warn(`Failed to load thumbnail for image ${i}:`, err);
-            // Fallback to original source
-            img.src = cleanSrc;
-          });
-
-          thumbnailPromises.push(thumbnailPromise);
+          allIndices.push(i);
         }
 
-        // Wait for all thumbnails to load (optional - for completion logging)
-        Promise.all(thumbnailPromises).then(() => {
-          console.log(`📸 All ${images.length} thumbnails loaded`);
-        });
+        // Use high-performance batch loading for all thumbnails
+        debugLog(`🚀 Starting batch thumbnail loading for ${allIndices.length} images`);
+        const startTime = performance.now();
 
-        console.log(`📸 Loaded all ${images.length} thumbnails immediately`);
+        await batchLoadThumbnailsWithProxyStates(allIndices);
+
+        const endTime = performance.now();
+        debugLog(`⚡ Batch thumbnail loading completed in ${(endTime - startTime).toFixed(2)}ms`);
+
+        debugLog(`📸 Loaded all ${images.length} thumbnails immediately`);
         
         // Start background preloading after thumbnails are loaded
         startBackgroundPreloading();
@@ -7037,7 +7158,7 @@
         document.getElementById('sort-newest').classList.toggle('active', order === 'newest');
         
         // Re-render thumbnails with new order
-        renderThumbnails();
+        renderThumbnails().catch(console.error);
         
         // Reset current index to 0 to show first image in new order
         current = 0;

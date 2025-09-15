@@ -126,6 +126,16 @@ class FaceAPIHandler(BaseHTTPRequestHandler):
                 else:
                     self.send_error(404, "Thumbnail not found")
 
+            elif len(path_parts) >= 3 and path_parts[0] == 'api' and path_parts[1] == 'batch-proxy-states':
+                # POST /api/batch-proxy-states
+                content_length = int(self.headers.get('Content-Length', 0))
+                request_data = json.loads(self.rfile.read(content_length))
+                image_ids = request_data.get('imageIds', [])
+                batch_states = self.get_batch_proxy_states(image_ids)
+                self.send_response(200)
+                self.send_cors_headers()
+                self.send_json_response(batch_states)
+
             elif len(path_parts) >= 2 and path_parts[0] == 'api' and path_parts[1] == 'load-picks':
                 # GET /api/load-picks
                 picks_list = self.load_picks_from_file()
@@ -649,6 +659,50 @@ class FaceAPIHandler(BaseHTTPRequestHandler):
                 'raw_proxy_type': raw_proxy_type,
                 'has_custom_proxy': has_custom_proxy
             }
+
+        finally:
+            conn.close()
+
+    def get_batch_proxy_states(self, image_ids):
+        """Get proxy states for multiple images in a single database query."""
+        if not image_ids:
+            return {}
+
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        try:
+            # Use IN clause for batch query - more efficient than individual queries
+            placeholders = ','.join(['?'] * len(image_ids))
+            cursor.execute(f"""
+                SELECT id, raw_proxy_type
+                FROM images
+                WHERE id IN ({placeholders})
+            """, image_ids)
+
+            results = {}
+            for row in cursor.fetchall():
+                image_id = row['id']
+                raw_proxy_type = row['raw_proxy_type'] if row['raw_proxy_type'] else 'none'
+
+                # Check if custom proxy exists for this image
+                has_custom_proxy = False
+                if raw_proxy_type == 'custom_generated':
+                    # Handle different working directories for proxy path
+                    current_dir = Path.cwd()
+                    if current_dir.name == "Scripts":
+                        proxy_path = Path(f"../RAW Proxies/{image_id}.jpg")
+                    else:
+                        proxy_path = Path(f"RAW Proxies/{image_id}.jpg")
+                    has_custom_proxy = proxy_path.exists()
+
+                results[str(image_id)] = {
+                    'raw_proxy_type': raw_proxy_type,
+                    'has_custom_proxy': has_custom_proxy
+                }
+
+            return results
 
         finally:
             conn.close()
