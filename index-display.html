@@ -1481,44 +1481,44 @@
         updateStatusIndicator();
         loadSidebar(current).catch(console.error);
       }
-      function showSingle(fitOrZoom) {
+      async function showSingle(fitOrZoom) {
         mode = fitOrZoom;
-        
+
+        console.log(`🎯 showSingle called with mode: ${fitOrZoom}, current index: ${current}`);
+        const currentMeta = images[current];
+        console.log(`🎯 Current image metadata:`, {
+          imageId: currentMeta?._imageId,
+          sourcefile: currentMeta?.SourceFile,
+          originalPath: currentMeta?._originalPath,
+          raw_proxy_type: currentMeta?.raw_proxy_type
+        });
+
         // Use z-index instead of display changes for instant switching
         singleview.style.zIndex = "200";  // Bring to front
         thumbgrid.style.zIndex = "1";     // Send to back
         singleview.classList.add('visible');
-        
+
         // Check if current item is a video
-        const currentMeta = images[current];
         const currentSrc = currentMeta?.SourceFile || currentMeta?.src || currentMeta?.FileName || '';
         const isCurrentVideo = isVideoFile(currentSrc);
-        
+
         if (isCurrentVideo) {
           // For videos, use the main bigvideo element directly
           console.log('📹 Loading video in main bigvideo element');
-          loadImage(current);
+          await loadImage(current);
         } else {
-          // Adjacent images should already be created from thumbnail selection
-          // Only create them if they don't exist (fallback for edge cases)
-          const currentElement = adjacentImages.current || adjacentVideos.current;
-          if (!currentElement) {
-            console.log('🔄 Creating adjacent images as fallback');
-            createAdjacentImageElements(current);
-          } else {
-            console.log('✨ Using pre-created adjacent images for instant display');
-            // Make sure current image is visible
-            if (adjacentImages.current) {
-              adjacentImages.current.style.opacity = "1";
-              adjacentImages.current.style.zIndex = "100";
-            }
-            if (adjacentVideos.current) {
-              adjacentVideos.current.style.opacity = "1";
-              adjacentVideos.current.style.zIndex = "100";
-            }
+          // Always refresh adjacent images to ensure proxy state is current
+          console.log('🔄 Refreshing adjacent images for current proxy state');
+
+          // Force clear proxy state cache to ensure fresh database lookup
+          if (currentMeta?._imageId) {
+            console.log(`🧹 Clearing proxy state cache for image ${currentMeta._imageId}`);
+            clearProxyStateCache(currentMeta._imageId);
           }
+
+          await createAdjacentImageElements(current);
         }
-        
+
         loadSidebar(current).catch(console.error);
         updateTouchToolbar();
       }
@@ -1530,54 +1530,181 @@
         const el = document.querySelector(`.thumb-cell[data-idx='${idx}']`);
         if (el) el.scrollIntoView({ block: "center", inline: "center" });
       }
-      function getDisplaySource(meta, forceTimestamp = false) {
+
+      // Proxy state caching system for persistent RAW proxy selection
+      const proxyStateCache = new Map();
+
+      async function getCurrentProxyState(imageId) {
+        // Return cached state if available
+        if (proxyStateCache.has(imageId)) {
+          return proxyStateCache.get(imageId);
+        }
+
+        try {
+          // Query database for current proxy state
+          const response = await fetch(`http://${window.location.hostname}:8001/api/proxy-state/${imageId}`);
+          if (!response.ok) {
+            console.warn(`Failed to get proxy state for image ${imageId}`);
+            return null;
+          }
+
+          const state = await response.json();
+
+          // Cache the result
+          proxyStateCache.set(imageId, state);
+          return state;
+        } catch (error) {
+          console.warn(`Error getting proxy state for image ${imageId}:`, error);
+          return null;
+        }
+      }
+
+      function clearProxyStateCache(imageId = null) {
+        if (imageId) {
+          // Clear cache for specific image
+          proxyStateCache.delete(imageId);
+        } else {
+          // Clear entire cache
+          proxyStateCache.clear();
+        }
+      }
+
+      async function reloadThumbnail(imageId) {
+        /**Reload thumbnail for a specific image after proxy change*/
+        // Find the thumbnail cell for this image
+        const imageIndex = images.findIndex(img => img._imageId === imageId);
+        if (imageIndex === -1) return;
+
+        const cell = document.querySelector(`.thumb-cell[data-idx='${imageIndex}']`);
+        if (!cell) return;
+
+        const img = cell.querySelector('img');
+        if (!img) return;
+
+        // Get updated thumbnail source and refresh
+        const meta = images[imageIndex];
+        const thumbnailSrc = await getThumbnailSource(meta, true); // Force timestamp
+        img.src = thumbnailSrc;
+      }
+
+      async function getDisplaySource(meta, forceTimestamp = false) {
         const originalSrc = meta.SourceFile || meta.src || meta.FileName;
         const cleanSrc = originalSrc.replace(/^\.\//, "");
 
-        // Check if this is a RAW file with a custom proxy
-        if (meta._imageId && meta.has_custom_proxy && meta.raw_proxy_type === 'custom_generated') {
-          const proxyPath = `RAW Proxies/${meta._imageId}.jpg`;
-          return forceTimestamp ? proxyPath + '?t=' + Date.now() : proxyPath;
+        // For RAW files, always check current proxy state from database
+        // Special case: Gallery hard links may have .jpg extension but be RAW proxies
+        const isRawFile = cleanSrc.match(/\.(nef|cr2|cr3|arw|dng|orf|rw2|pef|srw|raf)$/i) ||
+                         (meta._originalPath && meta._originalPath.match(/\.(nef|cr2|cr3|arw|dng|orf|rw2|pef|srw|raf)$/i));
+
+        if (meta._imageId && isRawFile) {
+          const proxyState = await getCurrentProxyState(meta._imageId);
+
+          console.log(`🔍 getDisplaySource for RAW file ${meta._imageId}:`, {
+            proxyState: proxyState,
+            originalPath: meta._originalPath,
+            cleanSrc: cleanSrc
+          });
+
+          if (proxyState) {
+            // Check for custom generated proxy
+            if (proxyState.raw_proxy_type === 'custom_generated' && proxyState.has_custom_proxy) {
+              const proxyPath = `RAW Proxies/${meta._imageId}.jpg`;
+              console.log(`✅ Using custom proxy: ${proxyPath}`);
+              return forceTimestamp ? proxyPath + '?t=' + Date.now() : proxyPath;
+            }
+
+            // Check for adjacent JPEG (original_jpg type)
+            if (proxyState.raw_proxy_type === 'original_jpg' && meta._originalPath) {
+              // Use original path to find adjacent JPEG, not gallery hardlink path
+              const originalPath = meta._originalPath.replace(/^\.\//, "");
+              const adjacentJpeg = originalPath.replace(/\.(nef|cr2|cr3|arw|dng|orf|rw2|pef|srw|raf)$/i, '.jpg');
+              console.log(`✅ Using original JPEG: ${adjacentJpeg}`);
+              return forceTimestamp ? adjacentJpeg + '?t=' + Date.now() : adjacentJpeg;
+            }
+          }
+
+          // Fallback to original RAW file if no proxy state or unsupported type
+          console.log(`⚠️ Fallback to RAW file: ${cleanSrc}`);
+          return forceTimestamp ? cleanSrc + '?t=' + Date.now() : cleanSrc;
         }
 
-        // Check if this is a RAW file with adjacent JPEG (original_jpg type)
-        if (meta.raw_proxy_type === 'original_jpg' && meta._originalPath) {
-          // Use original path to find adjacent JPEG, not gallery hardlink path
-          const originalPath = meta._originalPath.replace(/^\.\//, "");
-          const adjacentJpeg = originalPath.replace(/\.(nef|cr2|cr3|arw|dng|orf|rw2|pef|srw|raf)$/i, '.jpg');
-          return forceTimestamp ? adjacentJpeg + '?t=' + Date.now() : adjacentJpeg;
-        }
-        
         // Check if this is a HEIC file and if we have a WebP proxy
         if (meta._imageId && (cleanSrc.toLowerCase().endsWith('.heic') || meta.FileType === 'HEIC')) {
           // Use WebP proxy for display
           const proxyPath = `HEIC Proxies/${meta._imageId}.webp`;
           return forceTimestamp ? proxyPath + '?t=' + Date.now() : proxyPath;
         }
-        
+
         // Check if this is a video file - in galleries, they're already proxy files
         if (isVideoFile(cleanSrc)) {
           // Video files in galleries are already the correct proxy files
           return forceTimestamp ? cleanSrc + '?t=' + Date.now() : cleanSrc;
         }
-        
+
         // Use original file for other files
         const finalSrc = cleanSrc;
         return forceTimestamp ? finalSrc + '?t=' + Date.now() : finalSrc;
       }
+
+      async function getThumbnailSource(meta, forceTimestamp = false) {
+        /**Get thumbnail source that reflects RAW proxy selection*/
+        const originalSrc = meta.SourceFile || meta.src || meta.FileName;
+        const cleanSrc = originalSrc.replace(/^\.\//, "");
+
+        // Fast path: For non-RAW files, use existing thumbnail immediately
+        if (!meta._imageId || !cleanSrc.match(/\.(nef|cr2|cr3|arw|dng|orf|rw2|pef|srw|raf)$/i)) {
+          if (meta._thumbnail) {
+            const thumbnailPath = meta._thumbnail;
+            return forceTimestamp ? thumbnailPath + '?t=' + Date.now() : thumbnailPath;
+          }
+          // Fallback to original file if no thumbnail available
+          return forceTimestamp ? cleanSrc + '?t=' + Date.now() : cleanSrc;
+        }
+
+        // For RAW files, check proxy state to determine thumbnail source
+        try {
+          const proxyState = await getCurrentProxyState(meta._imageId);
+
+          if (proxyState) {
+            // If using custom proxy, generate thumbnail from the proxy image
+            if (proxyState.raw_proxy_type === 'custom_generated' && proxyState.has_custom_proxy) {
+              // Use the Face API server to generate thumbnail from custom proxy
+              const thumbnailUrl = `http://${window.location.hostname}:8001/api/thumbnail/${meta._imageId}?source=custom_proxy`;
+              return forceTimestamp ? thumbnailUrl + '&t=' + Date.now() : thumbnailUrl;
+            }
+
+            // If using adjacent JPEG, generate thumbnail from that
+            if (proxyState.raw_proxy_type === 'original_jpg' && meta._originalPath) {
+              const thumbnailUrl = `http://${window.location.hostname}:8001/api/thumbnail/${meta._imageId}?source=adjacent_jpg`;
+              return forceTimestamp ? thumbnailUrl + '&t=' + Date.now() : thumbnailUrl;
+            }
+          }
+        } catch (error) {
+          console.warn(`Error getting proxy state for thumbnail ${meta._imageId}:`, error);
+        }
+
+        // Fallback: For RAW files or when proxy state fails, use existing thumbnail
+        if (meta._thumbnail) {
+          const thumbnailPath = meta._thumbnail;
+          return forceTimestamp ? thumbnailPath + '?t=' + Date.now() : thumbnailPath;
+        }
+
+        // Final fallback to original file if no thumbnail available
+        return forceTimestamp ? cleanSrc + '?t=' + Date.now() : cleanSrc;
+      }
       
-      function loadImage(idx, forceRefresh = false) {
+      async function loadImage(idx, forceRefresh = false) {
         if (!images[idx] || !currentGallery) return;
-        
+
         // Use cached version unless forceRefresh is true (for RAW proxy changes)
         const meta = images[idx];
-        const displaySrc = getDisplaySource(meta, forceRefresh);
+        const displaySrc = await getDisplaySource(meta, forceRefresh);
         const originalSrc = meta.SourceFile || meta.src || meta.FileName;
         const cleanOriginalSrc = originalSrc.replace(/^\.\//, ""); // for filename extraction
         const imageId = meta._imageId;
         const isPicked = picks.has(imageId);
         const isRejected = rejects.has(imageId);
-        
+
         console.log('🎯 loadImage called for:', {
           cleanOriginalSrc: cleanOriginalSrc,
           displaySrc: displaySrc,
@@ -1826,15 +1953,15 @@
         }
       }
       
-      function createAdjacentImageElements(centerIdx) {
+      async function createAdjacentImageElements(centerIdx) {
         /**Create DOM elements for current image and 2 adjacent images on each side*/
         if (!images || images.length === 0) return;
-        
+
         console.log(`🎯 Creating adjacent images for center index ${centerIdx} (mode: ${mode})`);
-        
+
         // Clear existing adjacent elements
         clearAdjacentElements();
-        
+
         // For small galleries, avoid duplicate indices
         const indices = {};
         if (images.length >= 5) {
@@ -1855,24 +1982,42 @@
             indices.next2 = (centerIdx + 2) % images.length;
           }
         }
-        
+
         // Create elements for each position
-        Object.keys(indices).forEach(position => {
+        for (const position of Object.keys(indices)) {
           const idx = indices[position];
           const meta = images[idx];
-          if (!meta) return;
-          
+          if (!meta) continue;
+
           const originalSrc = meta.SourceFile || meta.src || meta.FileName;
           const cleanOriginalSrc = originalSrc.replace(/^\.\//, "");
-          const displaySrc = getDisplaySource(meta, false);
+          const displaySrc = await getDisplaySource(meta, false);
           const isPicked = picks.has(meta._imageId);
           const isRejected = rejects.has(meta._imageId);
-          
+
+          // Debug logging for proxy state
+          const isRawFile = cleanOriginalSrc.match(/\.(nef|cr2|cr3|arw|dng|orf|rw2|pef|srw|raf)$/i) ||
+                           (meta._originalPath && meta._originalPath.match(/\.(nef|cr2|cr3|arw|dng|orf|rw2|pef|srw|raf)$/i));
+          if (position === 'current' && isRawFile) {
+            console.log(`🔍 RAW file display source for current image:`, {
+              originalSrc: cleanOriginalSrc,
+              displaySrc: displaySrc,
+              imageId: meta._imageId,
+              raw_proxy_type: meta.raw_proxy_type,
+              originalPath: meta._originalPath
+            });
+
+            // Additional debug: check what getCurrentProxyState returns at this moment
+            getCurrentProxyState(meta._imageId).then(state => {
+              console.log(`🔍 Direct proxy state check for image ${meta._imageId}:`, state);
+            });
+          }
+
           if (isVideoFile(cleanOriginalSrc)) {
             // Skip creating adjacent video elements - videos load on demand only
             console.log(`📹 Skipping adjacent video element for ${position} (index ${idx}) - videos load on demand`);
           } else {
-            // Create image element  
+            // Create image element
             const img = document.createElement("img");
             img.src = displaySrc;
             img.style.position = "absolute";
@@ -1888,14 +2033,14 @@
             img.classList.toggle("rejected", isRejected);
             img.dataset.imageIndex = idx;
             img.dataset.position = position;
-            
+
             adjacentImages[position] = img;
             bigimgWrap.appendChild(img);
-            
+
             console.log(`🖼️ Created image element for ${position} (index ${idx})`);
           }
-        });
-        
+        }
+
         // Hide the main bigimg since we're using adjacent elements for images
         // Keep bigvideo available for video playback when needed
         bigimg.style.display = "none";
@@ -2627,24 +2772,29 @@
         console.log(`📊 Initialization complete: ${picks.size} picks, ${rejects.size} rejects`);
       }
       
-      function enterCullMode() {
+      async function enterCullMode() {
         if (selectedThumbnails.size < 2) {
           alert("Select at least 2 images to enter cull mode");
           return;
         }
-        
+
         // Clear all cull images first to prevent flash of previous content
         document.getElementById('cull-main-img').src = '';
         document.getElementById('cull-candidate-img').src = '';
         document.getElementById('cull-current-img').src = '';
-        
+
         cullMode = true;
-        cullImages = Array.from(selectedThumbnails).map(i => ({
+
+        // Use Promise.all to get display sources for all selected images
+        const selectedIndices = Array.from(selectedThumbnails);
+        const cullImagePromises = selectedIndices.map(async i => ({
           index: i,
           src: images[i].SourceFile || images[i].src || images[i].FileName,
-          displaySrc: getDisplaySource(images[i]),
+          displaySrc: await getDisplaySource(images[i]),
           _imageId: images[i]._imageId
         }));
+
+        cullImages = await Promise.all(cullImagePromises);
         cullCurrent = 0;
         cullPick = -1; // -1 = no candidate, >=0 = candidate index
         
@@ -4040,16 +4190,28 @@
             if (meta && meta._imageId === imageId) {
               meta.raw_proxy_type = useCustomProxy ? 'custom_generated' : 'original_jpg';
             }
-            
+
+            // Clear proxy state cache for this image to force real-time lookup
+            clearProxyStateCache(imageId);
+
             // Show success feedback
             button.textContent = '✅ ' + (useCustomProxy ? 'Using RAW Proxy' : 'Using Original JPG');
             button.style.background = '#00aa00';
-            
-            // Reload the current image to show the change
+
+            // If we're in single view (fit/zoom), recreate adjacent images with new proxy state
+            if (mode === 'fit' || mode === 'zoom') {
+              console.log('🔄 Recreating adjacent images after proxy change in single view');
+              await createAdjacentImageElements(current);
+            } else {
+              // If in thumbnail mode, just clear cache for when entering single view later
+              clearAdjacentElements();
+            }
+
+            // Reload the current image to show the change (only works if in single view)
             await reloadCurrentImage();
-            
+
             // Explicitly reload thumbnail for this image
-            reloadThumbnail(imageId);
+            await reloadThumbnail(imageId);
             
             // Reload sidebar to update controls
             setTimeout(async () => {
@@ -4221,9 +4383,9 @@
       async function reloadCurrentImage() {
         /**Reload the currently displayed image to reflect proxy changes*/
         if (mode === 'thumbs' || !images[current]) return;
-        
+
         const meta = images[current];
-        const timestampUrl = getDisplaySource(meta, true); // Use proper proxy logic with timestamp
+        const timestampUrl = await getDisplaySource(meta, true); // Use proper proxy logic with timestamp
         
         if (mode === 'fit' || mode === 'zoom') {
           // Using adjacent image system - update the current visible element
@@ -4241,23 +4403,8 @@
             adjacentVideos.current.src = timestampUrl;
           }
         }
-        
+
         // Thumbnail reload is handled separately when explicitly needed for proxy changes
-      }
-      
-      function reloadThumbnail(imageId) {
-        /**Force reload thumbnail with timestamp to show updated version*/
-        if (!imageId) return;
-        
-        // Find thumbnail in grid view and force reload
-        const thumbnailImg = document.querySelector(`img[data-image-id="${imageId}"]`);
-        if (thumbnailImg) {
-          const originalSrc = thumbnailImg.src.split('?')[0]; // Remove existing timestamp
-          thumbnailImg.src = originalSrc + '?t=' + Date.now();
-        }
-        
-        // Only reload thumbnail in current view to avoid performance issues during gallery switching
-        // The expensive querySelectorAll is only used when specifically needed for proxy changes
       }
       
       async function showFaces(faces, containerElement) {
@@ -4726,17 +4873,12 @@
         console.log(`📉 Memory management: Unloaded ${toUnload.length} images furthest from viewport`);
       }
       
-      function loadThumbnail(cell, idx) {
+      async function loadThumbnail(cell, idx) {
         const meta = images[idx];
         if (!meta) return;
-        
-        // Use thumbnail if available, otherwise fall back to main image
-        let src;
-        if (meta._thumbnail) {
-          src = meta._thumbnail;
-        } else {
-          src = meta.SourceFile || meta.src || meta.FileName;
-        }
+
+        // Use proxy-aware thumbnail source
+        const src = await getThumbnailSource(meta);
         const cleanSrc = src.replace(/^\.\//, "");
         
         // Check if already has content loaded
@@ -4805,54 +4947,57 @@
         existingImages.forEach(img => {
           img.src = ''; // Cancel pending load
         });
-        
+
         // Clear timeouts and reset tracking
         loadTimeouts.forEach(id => clearTimeout(id));
         loadTimeouts.clear();
         loadedImages.clear();
         viewportCenter = 0;
-        
+
         // Clear DOM
         thumbgrid.innerHTML = "";
-        
-        images.forEach((meta, i) => {
+
+        // Create all thumbnail cells first, then load images in parallel
+        const thumbnailPromises = [];
+
+        for (let i = 0; i < images.length; i++) {
+          const meta = images[i];
           const src = meta.SourceFile || meta.src || meta.FileName;
           const cleanSrc = src.replace(/^\.\//, "");
           const cell = document.createElement("div");
           cell.className = "thumb-cell";
           cell.dataset.idx = i;
-          
-          // Load all thumbnails immediately - no lazy loading
+
+          // Create image element but don't set src yet
+          const img = document.createElement("img");
+          img.alt = meta.FileName || "";
+
           if (isVideoFile(cleanSrc)) {
-            // For videos, use generated thumbnail image instead of video element
-            const img = document.createElement("img");
-            if (meta._thumbnail) {
-              img.src = meta._thumbnail;
-            } else {
-              // Fallback to video file if no thumbnail available
-              img.src = cleanSrc;
-            }
-            img.alt = meta.FileName || "";
             cell.classList.add("video-thumbnail");
-            cell.appendChild(img);
-          } else {
-            const img = document.createElement("img");
-            // Always use thumbnail if available, otherwise original
-            if (meta._thumbnail) {
-              img.src = meta._thumbnail;
-            } else {
-              img.src = cleanSrc;
-            }
-            img.alt = meta.FileName || "";
-            cell.appendChild(img);
           }
-          
+
+          cell.appendChild(img);
           cell.dataset.loaded = 'true';
           loadedImages.add(i);
-          
           thumbgrid.appendChild(cell);
+
+          // Start async thumbnail loading (parallel)
+          const thumbnailPromise = getThumbnailSource(meta).then(thumbnailSrc => {
+            img.src = thumbnailSrc;
+          }).catch(err => {
+            console.warn(`Failed to load thumbnail for image ${i}:`, err);
+            // Fallback to original source
+            img.src = cleanSrc;
+          });
+
+          thumbnailPromises.push(thumbnailPromise);
+        }
+
+        // Wait for all thumbnails to load (optional - for completion logging)
+        Promise.all(thumbnailPromises).then(() => {
+          console.log(`📸 All ${images.length} thumbnails loaded`);
         });
-        
+
         console.log(`📸 Loaded all ${images.length} thumbnails immediately`);
         
         // Start background preloading after thumbnails are loaded
@@ -4922,24 +5067,24 @@
         console.log(`📋 Created preload queue of ${preloadQueue.length} IMAGES ONLY (max ${maxPreloadImages}) starting from index ${startIndex}`);
       }
       
-      function continuePreloading() {
+      async function continuePreloading() {
         /**Continue preloading the next image in queue - IMAGES ONLY*/
         if (!preloadingActive || currentPreloadIndex >= preloadQueue.length) {
           console.log(`✅ Background preloading completed (${preloadedImages.size} images cached)`);
           preloadingActive = false;
           return;
         }
-        
+
         const imageIndex = preloadQueue[currentPreloadIndex];
         const meta = images[imageIndex];
-        
+
         if (!meta || preloadedImages.has(imageIndex)) {
           // Skip already preloaded or invalid images
           currentPreloadIndex++;
           setTimeout(continuePreloading, 1);
           return;
         }
-        
+
         // Double-check that this isn't a video (safety check)
         const fileName = meta.SourceFile || meta.src || meta.FileName || '';
         if (isVideoFile(fileName)) {
@@ -4948,11 +5093,11 @@
           setTimeout(continuePreloading, 1);
           return;
         }
-        
+
         // Create an image element to preload
         const img = new Image();
-        const displaySrc = getDisplaySource(meta, false); // No timestamp for caching
-        
+        const displaySrc = await getDisplaySource(meta, false); // No timestamp for caching
+
         console.log(`🔄 Preloading image index ${imageIndex} with URL: ${displaySrc}`);
         
         img.onload = () => {

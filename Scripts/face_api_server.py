@@ -102,7 +102,30 @@ class FaceAPIHandler(BaseHTTPRequestHandler):
                 self.send_response(200)
                 self.send_cors_headers()
                 self.send_json_response({'exists': proxy_exists})
-            
+
+            elif len(path_parts) >= 3 and path_parts[0] == 'api' and path_parts[1] == 'proxy-state':
+                # GET /api/proxy-state/{image_id}
+                image_id = int(path_parts[2])
+                proxy_state = self.get_proxy_state(image_id)
+                self.send_response(200)
+                self.send_cors_headers()
+                self.send_json_response(proxy_state)
+
+            elif len(path_parts) >= 3 and path_parts[0] == 'api' and path_parts[1] == 'thumbnail':
+                # GET /api/thumbnail/{image_id}?source=custom_proxy|adjacent_jpg
+                image_id = int(path_parts[2])
+                query_params = parse_qs(parsed_path.query)
+                source = query_params.get('source', ['default'])[0]
+                thumbnail_data = self.get_proxy_thumbnail(image_id, source)
+                if thumbnail_data:
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'image/jpeg')
+                    self.send_cors_headers()
+                    self.end_headers()
+                    self.wfile.write(thumbnail_data)
+                else:
+                    self.send_error(404, "Thumbnail not found")
+
             elif len(path_parts) >= 2 and path_parts[0] == 'api' and path_parts[1] == 'load-picks':
                 # GET /api/load-picks
                 picks_list = self.load_picks_from_file()
@@ -590,7 +613,126 @@ class FaceAPIHandler(BaseHTTPRequestHandler):
         
         conn.close()
         return metadata
-    
+
+    def get_proxy_state(self, image_id):
+        """Get current proxy state for an image from database."""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        try:
+            # Get proxy-related fields from database
+            cursor.execute("""
+                SELECT raw_proxy_type, id
+                FROM images
+                WHERE id = ?
+            """, (image_id,))
+
+            row = cursor.fetchone()
+            if not row:
+                return {'error': 'Image not found'}
+
+            raw_proxy_type = row['raw_proxy_type'] if row['raw_proxy_type'] else 'none'
+
+            # Check if custom proxy exists
+            has_custom_proxy = False
+            if raw_proxy_type == 'custom_generated':
+                # Handle different working directories for proxy path
+                current_dir = Path.cwd()
+                if current_dir.name == "Scripts":
+                    proxy_path = Path(f"../RAW Proxies/{image_id}.jpg")
+                else:
+                    proxy_path = Path(f"RAW Proxies/{image_id}.jpg")
+                has_custom_proxy = proxy_path.exists()
+
+            return {
+                'raw_proxy_type': raw_proxy_type,
+                'has_custom_proxy': has_custom_proxy
+            }
+
+        finally:
+            conn.close()
+
+    def get_proxy_thumbnail(self, image_id, source):
+        """Generate thumbnail based on proxy selection."""
+        import io
+        try:
+            from PIL import Image
+        except ImportError:
+            return None
+
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        try:
+            # Get image information from database
+            cursor.execute("""
+                SELECT path, raw_proxy_type
+                FROM images
+                WHERE id = ?
+            """, (image_id,))
+
+            row = cursor.fetchone()
+            if not row:
+                return None
+
+            source_image_path = None
+
+            if source == 'custom_proxy':
+                # Use custom proxy from RAW Proxies folder
+                current_dir = Path.cwd()
+                if current_dir.name == "Scripts":
+                    proxy_path = Path(f"../RAW Proxies/{image_id}.jpg")
+                else:
+                    proxy_path = Path(f"RAW Proxies/{image_id}.jpg")
+
+                if proxy_path.exists():
+                    source_image_path = str(proxy_path)
+
+            elif source == 'adjacent_jpg':
+                # Use adjacent JPEG file
+                original_path = row['path']
+                # Remove leading ./ if present
+                if original_path.startswith('./'):
+                    original_path = original_path[2:]
+
+                # Convert RAW extension to JPG
+                import re
+                adjacent_jpg = re.sub(r'\.(nef|cr2|cr3|arw|dng|orf|rw2|pef|srw|raf)$', '.jpg', original_path, flags=re.IGNORECASE)
+
+                current_dir = Path.cwd()
+                if current_dir.name == "Scripts":
+                    adjacent_path = Path(f"../{adjacent_jpg}")
+                else:
+                    adjacent_path = Path(adjacent_jpg)
+
+                if adjacent_path.exists():
+                    source_image_path = str(adjacent_path)
+
+            if not source_image_path:
+                return None
+
+            # Generate thumbnail from source image
+            with Image.open(source_image_path) as img:
+                # Convert to RGB if necessary
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+
+                # Create thumbnail (keeping aspect ratio)
+                img.thumbnail((300, 300), Image.Resampling.LANCZOS)
+
+                # Save to bytes
+                thumbnail_bytes = io.BytesIO()
+                img.save(thumbnail_bytes, format='JPEG', quality=85)
+                return thumbnail_bytes.getvalue()
+
+        except Exception as e:
+            print(f"Error generating proxy thumbnail: {e}")
+            return None
+        finally:
+            conn.close()
+
     def get_hard_link_source(self, row):
         """Determine the correct hard link source for a file, handling RAW files."""
         original_path = row['path']
