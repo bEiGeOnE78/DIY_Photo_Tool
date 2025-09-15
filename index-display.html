@@ -1449,17 +1449,28 @@
       }
 
       function showThumbs() {
+        console.log(`🔄 Switching to thumbnail view from mode: ${mode}, current index: ${current}`);
         mode = "thumbs";
-        
+
         // Use z-index instead of display changes for instant switching
         thumbgrid.style.zIndex = "200";   // Bring thumbnails to front
         singleview.style.zIndex = "1";    // Send single view to back
         singleview.classList.remove('visible');
         
-        // Reset video z-index when switching to thumbnail mode
+        // Clean up video elements when switching to thumbnail mode
         const videoEl = document.getElementById('bigvideo');
         if (videoEl) {
           videoEl.style.zIndex = "1";
+          videoEl.style.display = "none";  // Hide video element
+          if (!videoEl.paused) {
+            videoEl.pause(); // Pause any playing video
+          }
+        }
+
+        // Hide the main bigimg element as well
+        const imageEl = document.getElementById('bigimg');
+        if (imageEl) {
+          imageEl.style.display = "none";
         }
         
         // Hide all adjacent images but keep them in DOM for fast re-entry
@@ -1473,10 +1484,12 @@
         updateTouchToolbar();
         
         // Sync orange selection with current image from full screen navigation
+        console.log(`🔄 Syncing thumbnail selection to current index: ${current}`);
         selectedThumbnails.clear();
         selectedThumbnails.add(current);
-        
+
         updateSelectionDisplay();
+        console.log(`🔄 Selected thumbnails after sync:`, Array.from(selectedThumbnails));
         updatePickClasses();
         updateStatusIndicator();
         loadSidebar(current).catch(console.error);
@@ -1713,6 +1726,9 @@
         });
         
         if (isVideoFile(cleanOriginalSrc)) {
+          // Clear adjacent elements when loading a video to prevent state confusion
+          clearAdjacentElements();
+
           // Debug logging for video loading
           console.log('🎬 Loading video:', {
             cleanOriginalSrc: cleanOriginalSrc,
@@ -2041,9 +2057,13 @@
           }
         }
 
-        // Hide the main bigimg since we're using adjacent elements for images
-        // Keep bigvideo available for video playback when needed
+        // Hide the main bigimg and bigvideo since we're using adjacent elements for images
+        // They will be shown again when specifically needed for video playback
         bigimg.style.display = "none";
+        const videoElement = document.getElementById('bigvideo');
+        if (videoElement) {
+          videoElement.style.display = "none";
+        }
       }
       
       function clearAdjacentElements() {
@@ -2173,11 +2193,23 @@
               loadFacesForCurrentImage();
             }, 50);
           } else {
-            // Fallback to regular loading if instant switch failed
+            // Fallback: recreate adjacent elements if instant switch failed
+            console.log(`🔄 Instant switch failed, recreating adjacent elements for index ${newCurrent}`);
             current = newCurrent;
             selectedThumbnails.clear();
             selectedThumbnails.add(current);
-            loadImage(current);
+
+            // Check if target is a video or image
+            const targetMeta = images[current];
+            const targetSrc = targetMeta?.SourceFile || targetMeta?.src || targetMeta?.FileName || '';
+
+            if (isVideoFile(targetSrc)) {
+              // For videos, use loadImage
+              loadImage(current);
+            } else {
+              // For images, recreate adjacent elements
+              createAdjacentImageElements(current);
+            }
           }
           
           loadSidebar(current).catch(console.error);
